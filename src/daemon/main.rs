@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
     let peer_connection = Arc::new(api.new_peer_connection(config).await?);
     let mut output_tracks = HashMap::new();
     //media.push("audio");
-    let output_track = Arc::new(TrackLocalStaticRTP::new(
+    let audio_output_track = Arc::new(TrackLocalStaticRTP::new(
         RTCRtpCodecCapability {
             mime_type: MIME_TYPE_OPUS.to_owned(),
             ..Default::default()
@@ -123,7 +123,7 @@ async fn main() -> Result<()> {
 
     // Add this newly created track to the PeerConnection
     let rtp_sender = peer_connection
-        .add_track(Arc::clone(&output_track) as Arc<dyn TrackLocal + Send + Sync>)
+        .add_track(Arc::clone(&audio_output_track) as Arc<dyn TrackLocal + Send + Sync>)
         .await?;
 
     // Read incoming RTCP packets
@@ -137,7 +137,7 @@ async fn main() -> Result<()> {
         Result::<()>::Ok(())
     });
 
-    output_tracks.insert("audio".to_owned(), output_track);
+    output_tracks.insert("audio".to_owned(), audio_output_track);
 
     // Wait for the offer to be pasted
     let line = signal::must_read_stdin()?;
@@ -156,37 +156,9 @@ async fn main() -> Result<()> {
                 if let Some(track) = track {
                     // Send a PLI on an interval so that the publisher is pushing a keyframe every rtcpPLIInterval
                     // This is a temporary fix until we implement incoming RTCP events, then we would push a PLI only when a viewer requests it
-                    let media_ssrc = track.ssrc();
+                    //let media_ssrc = track.ssrc();
 
-                    if track.kind() == RTPCodecType::Video {
-                        let pc2 = pc.clone();
-                        tokio::spawn(async move {
-                            let mut result = Result::<usize>::Ok(0);
-                            while result.is_ok() {
-                                let timeout = tokio::time::sleep(Duration::from_secs(3));
-                                tokio::pin!(timeout);
-
-                                tokio::select! {
-                                    _ = timeout.as_mut() =>{
-                                        if let Some(pc) = pc2.upgrade(){
-                                            result = pc.write_rtcp(&[Box::new(PictureLossIndication{
-                                                    sender_ssrc: 0,
-                                                    media_ssrc,
-                                            })]).await.map_err(Into::into);
-                                        }else{
-                                            break;
-                                        }
-                                    }
-                                };
-                            }
-                        });
-                    }
-
-                    let kind = if track.kind() == RTPCodecType::Audio {
-                        "audio"
-                    } else {
-                        "video"
-                    };
+                    let kind = "audio";
                     let output_track = if let Some(output_track) = output_tracks.get(kind) {
                         Arc::clone(output_track)
                     } else {
