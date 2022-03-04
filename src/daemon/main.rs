@@ -39,16 +39,6 @@ async fn main() -> Result<()> {
                 .long("debug")
                 .short('d')
                 .help("Prints debug log information"),
-        ).arg(
-            Arg::new("audio")
-                .long("audio")
-                .short('a')
-                .help("Enable audio reflect"),
-        ).arg(
-            Arg::new("video")
-                .long("video")
-                .short('v')
-                .help("Enable video reflect"),
         );
 
     let matches = app.clone().get_matches();
@@ -58,12 +48,6 @@ async fn main() -> Result<()> {
         std::process::exit(0);
     }
 
-    let audio = matches.is_present("audio");
-    let video = matches.is_present("video");
-    if !audio && !video {
-        println!("one of audio or video must be enabled");
-        std::process::exit(0);
-    }
     let debug = matches.is_present("debug");
     if debug {
         env_logger::Builder::new()
@@ -88,37 +72,17 @@ async fn main() -> Result<()> {
     let mut m = MediaEngine::default();
 
     // Setup the codecs you want to use.
-    if audio {
-        m.register_codec(
-            RTCRtpCodecParameters {
-                capability: RTCRtpCodecCapability {
-                    mime_type: MIME_TYPE_OPUS.to_owned(),
-                    ..Default::default()
-                },
-                payload_type: 120,
+    m.register_codec(
+        RTCRtpCodecParameters {
+            capability: RTCRtpCodecCapability {
+                mime_type: MIME_TYPE_OPUS.to_owned(),
                 ..Default::default()
             },
-            RTPCodecType::Audio,
-        )?;
-    }
-
-    // We'll use a VP8 and Opus but you can also define your own
-    if video {
-        m.register_codec(
-            RTCRtpCodecParameters {
-                capability: RTCRtpCodecCapability {
-                    mime_type: MIME_TYPE_VP8.to_owned(),
-                    clock_rate: 90000,
-                    channels: 0,
-                    sdp_fmtp_line: "".to_owned(),
-                    rtcp_feedback: vec![],
-                },
-                payload_type: 96,
-                ..Default::default()
-            },
-            RTPCodecType::Video,
-        )?;
-    }
+            payload_type: 120,
+            ..Default::default()
+        },
+        RTPCodecType::Audio,
+    )?;
 
     // Create a InterceptorRegistry. This is the user configurable RTP/RTCP Pipeline.
     // This provides NACKs, RTCP Reports and other features. If you use `webrtc.NewPeerConnection`
@@ -147,45 +111,33 @@ async fn main() -> Result<()> {
     // Create a new RTCPeerConnection
     let peer_connection = Arc::new(api.new_peer_connection(config).await?);
     let mut output_tracks = HashMap::new();
-    let mut media = vec![];
-    if audio {
-        media.push("audio");
-    }
-    if video {
-        media.push("video");
-    };
-    for s in media {
-        let output_track = Arc::new(TrackLocalStaticRTP::new(
-            RTCRtpCodecCapability {
-                mime_type: if s == "video" {
-                    MIME_TYPE_VP8.to_owned()
-                } else {
-                    MIME_TYPE_OPUS.to_owned()
-                },
-                ..Default::default()
-            },
-            format!("track-{}", s),
-            "webrtc-rs".to_owned(),
-        ));
+    //media.push("audio");
+    let output_track = Arc::new(TrackLocalStaticRTP::new(
+        RTCRtpCodecCapability {
+            mime_type: MIME_TYPE_OPUS.to_owned(),
+            ..Default::default()
+        },
+        "track-audio".to_owned(),
+        "webrtc-rs".to_owned(),
+    ));
 
-        // Add this newly created track to the PeerConnection
-        let rtp_sender = peer_connection
-            .add_track(Arc::clone(&output_track) as Arc<dyn TrackLocal + Send + Sync>)
-            .await?;
+    // Add this newly created track to the PeerConnection
+    let rtp_sender = peer_connection
+        .add_track(Arc::clone(&output_track) as Arc<dyn TrackLocal + Send + Sync>)
+        .await?;
 
-        // Read incoming RTCP packets
-        // Before these packets are returned they are processed by interceptors. For things
-        // like NACK this needs to be called.
-        let m = s.to_owned();
-        tokio::spawn(async move {
-            let mut rtcp_buf = vec![0u8; 1500];
-            while let Ok((_, _)) = rtp_sender.read(&mut rtcp_buf).await {}
-            println!("{} rtp_sender.read loop exit", m);
-            Result::<()>::Ok(())
-        });
+    // Read incoming RTCP packets
+    // Before these packets are returned they are processed by interceptors. For things
+    // like NACK this needs to be called.
+    let m = "audio".to_owned();
+    tokio::spawn(async move {
+        let mut rtcp_buf = vec![0u8; 1500];
+        while let Ok((_, _)) = rtp_sender.read(&mut rtcp_buf).await {}
+        println!("{} rtp_sender.read loop exit", m);
+        Result::<()>::Ok(())
+    });
 
-        output_tracks.insert(s.to_owned(), output_track);
-    }
+    output_tracks.insert("audio".to_owned(), output_track);
 
     // Wait for the offer to be pasted
     let line = signal::must_read_stdin()?;
