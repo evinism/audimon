@@ -110,7 +110,6 @@ async fn main() -> Result<()> {
 
     // Create a new RTCPeerConnection
     let peer_connection = Arc::new(api.new_peer_connection(config).await?);
-    let mut output_tracks = HashMap::new();
     //media.push("audio");
     let audio_output_track = Arc::new(TrackLocalStaticRTP::new(
         RTCRtpCodecCapability {
@@ -137,8 +136,6 @@ async fn main() -> Result<()> {
         Result::<()>::Ok(())
     });
 
-    output_tracks.insert("audio".to_owned(), audio_output_track);
-
     // Wait for the offer to be pasted
     let line = signal::must_read_stdin()?;
     let desc_data = signal::decode(line.as_str())?;
@@ -158,15 +155,9 @@ async fn main() -> Result<()> {
                     // This is a temporary fix until we implement incoming RTCP events, then we would push a PLI only when a viewer requests it
                     //let media_ssrc = track.ssrc();
 
-                    let kind = "audio";
-                    let output_track = if let Some(output_track) = output_tracks.get(kind) {
-                        Arc::clone(output_track)
-                    } else {
-                        println!("output_track not found for type = {}", kind);
-                        return Box::pin(async {});
-                    };
-
+                    let output_track = Arc::clone(&audio_output_track);
                     let output_track2 = Arc::clone(&output_track);
+
                     tokio::spawn(async move {
                         println!(
                             "Track has started, of type {}: {}",
