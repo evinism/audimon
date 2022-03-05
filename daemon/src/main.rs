@@ -2,6 +2,11 @@ use anyhow::Result;
 use clap::{Command, AppSettings, Arg};
 use std::io::Write;
 use std::sync::Arc;
+use dasp::Signal;
+use tokio::time::Duration;
+use webrtc::media::Sample;
+use bytes::Bytes;
+
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS};
 use webrtc::api::APIBuilder;
@@ -15,6 +20,7 @@ use webrtc::rtp_transceiver::rtp_codec::{
 };
 use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
 use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
+use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_local::{TrackLocal, TrackLocalWriter};
 use webrtc::track::track_remote::TrackRemote;
 
@@ -80,9 +86,6 @@ async fn main() -> Result<()> {
         RTPCodecType::Audio,
     )?;
 
-
-    let signal = dasp::signal::rate(4.0).const_hz(1.0).sine();
-
     // Create a InterceptorRegistry. This is the user configurable RTP/RTCP Pipeline.
     // This provides NACKs, RTCP Reports and other features. If you use `webrtc.NewPeerConnection`
     // this is enabled by default. If you are manually managing You MUST create a InterceptorRegistry
@@ -110,7 +113,7 @@ async fn main() -> Result<()> {
     // Create a new RTCPeerConnection
     let peer_connection = Arc::new(api.new_peer_connection(config).await?);
     //media.push("audio");
-    let audio_output_track = Arc::new(TrackLocalStaticRTP::new(
+    let audio_output_track = Arc::new(TrackLocalStaticSample::new(
         RTCRtpCodecCapability {
             mime_type: MIME_TYPE_OPUS.to_owned(),
             ..Default::default()
@@ -163,13 +166,26 @@ async fn main() -> Result<()> {
                             track.payload_type(),
                             track.codec().await.capability.mime_type
                         );
+                        let mut audio_sine_wave = dasp::signal::rate(48000.0).const_hz(440.0).sine();
+
                         // Read RTP packets being sent to webrtc-rs
-                        while let Ok((rtp, _)) = track.read_rtp().await {
-                            
-                            if let Err(err) = output_track2.write_rtp(&rtp).await {
+                        let mut iter = 0;
+                        let sample_count = 2048;
+                        let mut ticker = tokio::time::interval(Duration::from_millis(2048 * 1000 / 48000));
+                        loop {
+                            let taken = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<_>>();
+                            let data = Bytes::from(taken);
+                            iter += 1;
+                            println!("YEEE!{}", iter + data.len());
+                            if let Err(err) = output_track2.write_sample(&Sample {
+                                data: data,
+                                duration: Duration::from_millis(2048 * 1000 / 48000),
+                                ..Default::default()
+                            }).await {
                                 println!("output track write_rtp got error: {}", err);
                                 break;
                             }
+                            let _ = ticker.tick().await;
                         }
 
                         println!(
