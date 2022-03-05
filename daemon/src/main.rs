@@ -24,6 +24,7 @@ use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSampl
 use webrtc::track::track_local::{TrackLocal, TrackLocalWriter};
 use webrtc::track::track_remote::TrackRemote;
 
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut app = Command::new("reflect")
@@ -149,6 +150,8 @@ async fn main() -> Result<()> {
     // Set a handler for when a new remote track starts, this handler copies inbound RTP packets,
     // replaces the SSRC and sends them back
     let pc = Arc::downgrade(&peer_connection);
+
+
     peer_connection
         .on_track(Box::new(
             move |track: Option<Arc<TrackRemote>>, _receiver: Option<Arc<RTCRtpReceiver>>| {
@@ -156,6 +159,19 @@ async fn main() -> Result<()> {
                     // Send a PLI on an interval so that the publisher is pushing a keyframe every rtcpPLIInterval
                     // This is a temporary fix until we implement incoming RTCP events, then we would push a PLI only when a viewer requests it
                     //let media_ssrc = track.ssrc();
+
+                    let (audio_buf_tx, mut audio_buf_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(1);
+
+                    tokio::spawn(async move {
+                        let mut audio_sine_wave = dasp::signal::rate(48000.0).const_hz(432.0).sine();
+                        let mut ticker = tokio::time::interval(Duration::from_millis(20));
+                        let sample_count = 960;
+                        loop {
+                            let samples = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<i16>>();
+                            audio_buf_tx.send(samples).await.unwrap();
+                            let _ = ticker.tick().await;
+                        }
+                    });
 
                     let output_track = Arc::clone(&audio_output_track);
                     let output_track2 = Arc::clone(&output_track);
@@ -166,22 +182,17 @@ async fn main() -> Result<()> {
                             track.payload_type(),
                             track.codec().await.capability.mime_type
                         );
-                        let mut audio_sine_wave = dasp::signal::rate(48000.0).const_hz(432.0).sine();
+                        //let mut audio_sine_wave = dasp::signal::rate(48000.0).const_hz(432.0).sine();
 
                         // Read RTP packets being sent to webrtc-rs
-                        let mut iter = 0;
-                        let sample_count = 960;
                         let mut ticker = tokio::time::interval(Duration::from_millis(20));
                         let mut encoder = audiopus::coder::Encoder::new(audiopus::SampleRate::Hz48000, audiopus::Channels::Mono, audiopus::Application::Audio).unwrap();
-                        encoder.set_complexity(8);
-
+                        encoder.set_complexity(8).unwrap();
                         loop {
-                            let taken = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<i16>>();
+                            let taken = audio_buf_rx.recv().await.unwrap();
                             let mut buffer = [0u8; 2048];
                             let size = encoder.encode(&taken[..], &mut buffer).unwrap();
                             let data = Bytes::copy_from_slice(&buffer[0..size]);
-                            iter += 1;
-                            // println!("YEEE!{:?}", String::from_utf8(data.to_vec()));
                             if let Err(err) = output_track2.write_sample(&Sample {
                                 data: data,
                                 duration: Duration::from_millis(20),
