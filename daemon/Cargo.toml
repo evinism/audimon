@@ -7,11 +7,7 @@ edition = "2021"
 
 [[bin]]
 name = "daemon"
-path = "src/daemon/main.rs"
-
-[[bin]]
-name = "client"
-path = "src/client/main.rs"
+path = "src/main.rs"
 
 [dependencies]
 webrtc = "0.4.0"

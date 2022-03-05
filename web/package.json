@@ -1,0 +1,15 @@
+{
+  "name": "audimon-web",
+  "version": "0.0.0",
+  "description": "audimon web",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "parcel index.html",
+    "build": "parcel build index.html"
+  },
+  "author": "Evin Sellin",
+  "license": "MIT",
+  "dependencies": {
+    "parcel": "^2.3.2"
+  }
+}
