@@ -1,18 +1,15 @@
 use anyhow::Result;
-use clap::{App, AppSettings, Arg};
-use std::collections::HashMap;
+use clap::{Command, AppSettings, Arg};
 use std::io::Write;
 use std::sync::Arc;
-use tokio::time::Duration;
 use webrtc::api::interceptor_registry::register_default_interceptors;
-use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS, MIME_TYPE_VP8};
+use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS};
 use webrtc::api::APIBuilder;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 use webrtc::rtp_transceiver::rtp_codec::{
     RTCRtpCodecCapability, RTCRtpCodecParameters, RTPCodecType,
 };
@@ -23,12 +20,11 @@ use webrtc::track::track_remote::TrackRemote;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut app = App::new("reflect")
+    let mut app = Command::new("reflect")
         .version("0.1.0")
         .author("Rain Liu <yliu@webrtc.rs>")
         .about("An example of how to send back to the user exactly what it receives using the same PeerConnection.")
         .setting(AppSettings::DeriveDisplayOrder)
-        .setting(AppSettings::SubcommandsNegateReqs)
         .arg(
             Arg::new("FULLHELP")
                 .help("Prints more detailed help information")
