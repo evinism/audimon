@@ -170,16 +170,16 @@ async fn main() -> Result<()> {
 
                         // Read RTP packets being sent to webrtc-rs
                         let mut iter = 0;
-                        let sample_count = 2048;
-                        let mut ticker = tokio::time::interval(Duration::from_millis(2048 * 1000 / 48000));
+                        let sample_count = 960;
+                        let mut ticker = tokio::time::interval(Duration::from_millis(20));
                         loop {
-                            let taken = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<_>>();
+                            let taken = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<u8>>();
                             let data = Bytes::from(taken);
                             iter += 1;
-                            println!("YEEE!{}", iter + data.len());
+                            // println!("YEEE!{:?}", String::from_utf8(data.to_vec()));
                             if let Err(err) = output_track2.write_sample(&Sample {
                                 data: data,
-                                duration: Duration::from_millis(2048 * 1000 / 48000),
+                                duration: Duration::from_millis(20),
                                 ..Default::default()
                             }).await {
                                 println!("output track write_rtp got error: {}", err);
