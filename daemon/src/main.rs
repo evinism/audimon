@@ -80,6 +80,9 @@ async fn main() -> Result<()> {
         RTPCodecType::Audio,
     )?;
 
+
+    let signal = dasp::signal::rate(4.0).const_hz(1.0).sine();
+
     // Create a InterceptorRegistry. This is the user configurable RTP/RTCP Pipeline.
     // This provides NACKs, RTCP Reports and other features. If you use `webrtc.NewPeerConnection`
     // this is enabled by default. If you are manually managing You MUST create a InterceptorRegistry
@@ -133,8 +136,8 @@ async fn main() -> Result<()> {
     });
 
     // Wait for the offer to be pasted
-    let line = signal::must_read_stdin()?;
-    let desc_data = signal::decode(line.as_str())?;
+    let line = signalz::must_read_stdin()?;
+    let desc_data = signalz::decode(line.as_str())?;
     let offer = serde_json::from_str::<RTCSessionDescription>(&desc_data)?;
 
     // Set the remote SessionDescription
@@ -218,7 +221,7 @@ async fn main() -> Result<()> {
     // Output the answer in base64 so we can paste it in browser
     if let Some(local_desc) = peer_connection.local_description().await {
         let json_str = serde_json::to_string(&local_desc)?;
-        let b64 = signal::encode(&json_str);
+        let b64 = signalz::encode(&json_str);
         println!("{}", b64);
     } else {
         println!("generate local_description failed!");
