@@ -166,15 +166,20 @@ async fn main() -> Result<()> {
                             track.payload_type(),
                             track.codec().await.capability.mime_type
                         );
-                        let mut audio_sine_wave = dasp::signal::rate(48000.0).const_hz(440.0).sine();
+                        let mut audio_sine_wave = dasp::signal::rate(48000.0).const_hz(432.0).sine();
 
                         // Read RTP packets being sent to webrtc-rs
                         let mut iter = 0;
                         let sample_count = 960;
                         let mut ticker = tokio::time::interval(Duration::from_millis(20));
+                        let mut encoder = audiopus::coder::Encoder::new(audiopus::SampleRate::Hz48000, audiopus::Channels::Mono, audiopus::Application::Audio).unwrap();
+                        encoder.set_complexity(8);
+
                         loop {
-                            let taken = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<u8>>();
-                            let data = Bytes::from(taken);
+                            let taken = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<i16>>();
+                            let mut buffer = [0u8; 2048];
+                            let size = encoder.encode(&taken[..], &mut buffer).unwrap();
+                            let data = Bytes::copy_from_slice(&buffer[0..size]);
                             iter += 1;
                             // println!("YEEE!{:?}", String::from_utf8(data.to_vec()));
                             if let Err(err) = output_track2.write_sample(&Sample {
