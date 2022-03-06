@@ -7,23 +7,22 @@ pub fn spawn_audio_thread(sink: tokio::sync::mpsc::Sender<Vec<i16>>){
     tokio::spawn(async move {
         let mut sys = System::new_all();
         sys.refresh_all();
-        let mut freqz = 440.0;
+        let mut freq = 440.0;
         let mut ctr = 0;
+        let smear_ratio = 0.1;
         let average_cpu_usage = dasp::signal::gen_mut(||{
             if ctr % 960 == 0 {
                 sys.refresh_cpu();
                 let total_cpu_usage: f32 = sys.processors().into_iter().map(|x| x.cpu_usage()).sum();
                 let normed_cpu_usage = total_cpu_usage / (sys.processors().len() as f32);
                 if normed_cpu_usage.is_normal() {
-                    freqz = freqz * 0.9 + 0.1 * ((normed_cpu_usage + 100.0) * 440.0 / 100.0) as f64;
+                    freq = (1. - smear_ratio) * freq  + smear_ratio * ((normed_cpu_usage + 100.0) * 440.0 / 100.0) as f64;
                 }
                 ctr = 0;
             }
             ctr = ctr + 1;
-            return freqz;
+            return freq;
         });
-
-
 
         let mut audio_sine_wave = dasp::signal::rate(48000.0).hz(average_cpu_usage).sine();
         let mut ticker = tokio::time::interval(Duration::from_millis(20));
