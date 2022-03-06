@@ -1,5 +1,6 @@
 mod webrtc_sink;
 mod audio;
+mod cpal_sink;
 
 use anyhow::Result;
 use clap::{Command, AppSettings, Arg};
@@ -22,6 +23,12 @@ async fn main() -> Result<()> {
                 .long("debug")
                 .short('d')
                 .help("Prints debug log information"),
+        )
+        .arg(
+            Arg::new("localaudio")
+                .long("localaudio")
+                .short('l')
+                .help("Output to the local computer")
         );
 
     let matches = app.clone().get_matches();
@@ -51,6 +58,10 @@ async fn main() -> Result<()> {
 
     let (audio_buf_tx, audio_buf_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(1);
     audio::spawn_audio_thread(audio_buf_tx);
-    webrtc_sink::init_webrtc_audio_destination(audio_buf_rx).await.unwrap();
+    if matches.is_present("localaudio") {
+        cpal_sink::init_local_sink(audio_buf_rx);
+    } else {
+        webrtc_sink::init_webrtc_audio_destination(audio_buf_rx).await.unwrap();
+    }
     Ok(())
 }

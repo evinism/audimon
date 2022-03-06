@@ -24,3 +24,4 @@ dasp = { version = "0.11.0", features = ["signal", "ring_buffer"] }
 bytes = "1.1.0"
 audiopus = "0.2.0"
 sysinfo = "0.23.5"
+cpal = "0.13.5"
