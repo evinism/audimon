@@ -12,16 +12,16 @@ mod faust {
 async fn audio(sink: tokio::sync::mpsc::Sender<Vec<i16>>) {
     // DSP Init
     let (mut dsp, mut state) = DspHandle::<faust::Volume>::new();
-    dsp.init(44800 as i32);
+    dsp.init(48000 as i32);
     let num_inputs = dsp.num_inputs();
     let num_outputs = dsp.num_inputs();
     println!("inputs: {}", num_inputs);
-    println!("outputs: {}", num_inputs);
+    println!("outputs: {}", num_outputs);
 
     //
     let mut sys = System::new_all();
     sys.refresh_all();
-    let mut freq = 440.0;
+    let mut freq = 110.0;
     let mut ctr = 0;
     let smear_ratio = 0.1;
     let average_cpu_usage = dasp::signal::gen_mut(||{
