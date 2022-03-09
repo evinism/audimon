@@ -18,5 +18,5 @@ vumeterS(a,b) = a,b <: _,_,_,_ :
   _,_;
 vumeter = _,_ : vumeterS(_,_);
 
-faderchannel = _,_ : volume : vumeter : _,_;
+faderchannel = _ <: volume : vumeter : _,_;
 process = faderchannel;

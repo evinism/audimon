@@ -1,8 +1,10 @@
 use dasp::Signal;
 use tokio::time::Duration;
-use sysinfo::{NetworkExt, NetworksExt, ProcessExt, System, SystemExt};
+use sysinfo::{System, SystemExt};
 use sysinfo::ProcessorExt;
 use faust_state::DspHandle;
+use smallvec::SmallVec;
+
 
 mod faust {
     include!(concat!(env!("OUT_DIR"), "/dsp.rs"));
@@ -14,7 +16,7 @@ async fn audio(sink: tokio::sync::mpsc::Sender<Vec<i16>>) {
     let (mut dsp, mut state) = DspHandle::<faust::Volume>::new();
     dsp.init(48000 as i32);
     let num_inputs = dsp.num_inputs();
-    let num_outputs = dsp.num_inputs();
+    let num_outputs = dsp.num_outputs();
     println!("inputs: {}", num_inputs);
     println!("outputs: {}", num_outputs);
 
@@ -42,8 +44,20 @@ async fn audio(sink: tokio::sync::mpsc::Sender<Vec<i16>>) {
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
     let sample_count = 960;
     loop {
-        let samples = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<i16>>();
-        sink.send(samples).await;
+        let samples = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<f32>>();
+        let mut inputs = SmallVec::<[&[f32]; 64]>::with_capacity(num_inputs as usize);
+        inputs.push(&samples[..]);
+        let mut one: [f32; 960] = [0.0; 960];
+        let mut two: [f32; 960] = [0.0; 960];
+        let mut outputs = SmallVec::<[&mut [f32]; 64]>::with_capacity(num_outputs as usize);
+        outputs.push(&mut one);
+        outputs.push(&mut two);
+        let len = 960;
+        dsp.update_and_compute(len, &inputs[..], &mut outputs[..]);
+        let out_samples = outputs[0].to_vec().iter().map(|sample| {
+            dasp::sample::Sample::to_sample(*sample)
+        }).collect::<Vec<i16>>();
+        sink.send(out_samples).await;
         let _ = ticker.tick().await;
     }
 }
