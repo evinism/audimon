@@ -25,29 +25,30 @@ async fn audio(sink: AudioThreadChannel) {
     //
     let mut sys = System::new_all();
     sys.refresh_all();
-    let mut freq = 110.0;
-    let mut ctr = 0;
     let smear_ratio = 0.1;
-    let norm_rat = 10.0;
-    let average_cpu_usage = dasp::signal::gen_mut(||{
-        if ctr % 960 == 0 {
-            sys.refresh_cpu();
-            let total_cpu_usage: f32 = sys.processors().into_iter().map(|x| x.cpu_usage()).sum();
-            let normed_cpu_usage = total_cpu_usage / (sys.processors().len() as f32);
-            if normed_cpu_usage.is_normal() {
-                freq = (1. - smear_ratio) * freq  + smear_ratio * ((normed_cpu_usage + norm_rat) * 110.0 / norm_rat) as f64;
-            }
-            ctr = 0;
-        }
-        ctr = ctr + 1;
-        return freq;
-    });
+    let mut cpu_usage_smooth = 0.0; // range [0, 1]
+    let mut mem_usage_smooth = 0.0; // range [0, 1]
+    let mut ctr: i64 = 0;
 
-    let mut audio_sine_wave = dasp::signal::rate(48000.0).hz(average_cpu_usage).sine();
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
-    let sample_count = 960;
     loop {
-        let samples = audio_sine_wave.by_ref().take(sample_count).map(dasp::sample::Sample::to_sample).collect::<Vec<f32>>();
+        // Gather Stats
+        sys.refresh_cpu();
+        sys.refresh_memory();
+
+        let total_cpu_usage: f32 = sys.processors().into_iter().map(|x| x.cpu_usage()).sum();
+        let normed_cpu_usage_raw = total_cpu_usage / (sys.processors().len() as f32);
+        if normed_cpu_usage_raw.is_normal() {
+            cpu_usage_smooth = (1. - smear_ratio) * cpu_usage_smooth  + smear_ratio * (normed_cpu_usage_raw / 100.0);
+        }
+
+        let normed_mem_usage_raw = sys.used_memory() as f32 / sys.total_memory() as f32;
+        if normed_mem_usage_raw.is_normal() {
+            mem_usage_smooth = (1. - smear_ratio) * cpu_usage_smooth  + smear_ratio * normed_mem_usage_raw;
+        }
+
+        // Process
+        let samples: [f32; 960] = [cpu_usage_smooth; 960];
         let mut inputs = SmallVec::<[&[f32]; 64]>::with_capacity(num_inputs as usize);
         inputs.push(&samples[..]);
         let mut one: [f32; 960] = [0.0; 960];
@@ -65,6 +66,7 @@ async fn audio(sink: AudioThreadChannel) {
         }).collect::<Vec<(i16, i16)>>();
         sink.send(out_samples).await;
         let _ = ticker.tick().await;
+        ctr += 1;
     }
 }
 

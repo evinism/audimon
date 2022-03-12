@@ -1,6 +1,5 @@
 mod webrtc_sink;
 mod audio;
-mod cpal_sink;
 
 use anyhow::Result;
 use clap::{Command, AppSettings, Arg};
