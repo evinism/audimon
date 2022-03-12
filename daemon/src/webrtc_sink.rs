@@ -25,7 +25,7 @@ use webrtc::track::track_local::{TrackLocal, TrackLocalWriter};
 use webrtc::track::track_remote::TrackRemote;
 
 
-pub async fn init_webrtc_audio_destination(mut audio_buf_rx: tokio::sync::mpsc::Receiver<Vec<i16>>) -> Result<(), anyhow::Error> {
+pub async fn init_webrtc_audio_destination(mut audio_buf_rx: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) -> Result<(), anyhow::Error> {
   // Create a MediaEngine object to configure the supported codec
   let mut m = MediaEngine::default();
 
@@ -115,13 +115,20 @@ pub async fn init_webrtc_audio_destination(mut audio_buf_rx: tokio::sync::mpsc::
   tokio::spawn(async move {
       // Read RTP packets being sent to webrtc-rs
       let mut ticker = tokio::time::interval(Duration::from_millis(20));
-      let mut encoder = audiopus::coder::Encoder::new(audiopus::SampleRate::Hz48000, audiopus::Channels::Mono, audiopus::Application::Audio).unwrap();
+      let mut encoder = audiopus::coder::Encoder::new(audiopus::SampleRate::Hz48000, audiopus::Channels::Stereo, audiopus::Application::Audio).unwrap();
       encoder.set_complexity(8).unwrap();
       loop {
           let taken = audio_buf_rx.recv().await.unwrap();
-          let mut buffer = [0u8; 2048];
-          let size = encoder.encode(&taken[..], &mut buffer).unwrap();
-          let data = Bytes::copy_from_slice(&buffer[0..size]);
+          let mut in_buffer = [0i16; 960 * 2];
+          //let mut in_buffer = [0i16; 960];
+          for (i, sample) in taken.iter().enumerate() {
+              //in_buffer[i] = (*sample).0;
+              in_buffer[i * 2] = (*sample).0;
+              in_buffer[i * 2 + 1] = (*sample).1;
+          }
+          let mut out_buffer = [0u8; 4096];
+          let size = encoder.encode(&in_buffer, &mut out_buffer).unwrap();
+          let data = Bytes::copy_from_slice(&out_buffer[0..size]);
           if let Err(err) = output_track2.write_sample(&Sample {
               data: data,
               duration: Duration::from_millis(20),

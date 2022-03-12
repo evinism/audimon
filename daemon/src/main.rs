@@ -6,6 +6,7 @@ use anyhow::Result;
 use clap::{Command, AppSettings, Arg};
 use std::io::Write;
 
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut app = Command::new("reflect")
@@ -56,12 +57,9 @@ async fn main() -> Result<()> {
             .init();
     }
 
-    let (audio_buf_tx, audio_buf_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(1);
+    let (audio_buf_tx, audio_buf_rx) = tokio::sync::mpsc::channel::<Vec<(i16, i16)>>(1);
     audio::spawn_audio_thread(audio_buf_tx);
-    if matches.is_present("localaudio") {
-        cpal_sink::init_local_sink(audio_buf_rx);
-    } else {
-        webrtc_sink::init_webrtc_audio_destination(audio_buf_rx).await.unwrap();
-    }
+    webrtc_sink::init_webrtc_audio_destination(audio_buf_rx).await.unwrap();
+
     Ok(())
 }

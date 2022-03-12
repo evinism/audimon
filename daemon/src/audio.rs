@@ -10,8 +10,10 @@ mod faust {
     include!(concat!(env!("OUT_DIR"), "/dsp.rs"));
 }
 
+type AudioThreadChannel = tokio::sync::mpsc::Sender<Vec<(i16, i16)>>;
 
-async fn audio(sink: tokio::sync::mpsc::Sender<Vec<i16>>) {
+
+async fn audio(sink: AudioThreadChannel) {
     // DSP Init
     let (mut dsp, mut state) = DspHandle::<faust::Volume>::new();
     dsp.init(48000 as i32);
@@ -26,13 +28,14 @@ async fn audio(sink: tokio::sync::mpsc::Sender<Vec<i16>>) {
     let mut freq = 110.0;
     let mut ctr = 0;
     let smear_ratio = 0.1;
+    let norm_rat = 10.0;
     let average_cpu_usage = dasp::signal::gen_mut(||{
         if ctr % 960 == 0 {
             sys.refresh_cpu();
             let total_cpu_usage: f32 = sys.processors().into_iter().map(|x| x.cpu_usage()).sum();
             let normed_cpu_usage = total_cpu_usage / (sys.processors().len() as f32);
             if normed_cpu_usage.is_normal() {
-                freq = (1. - smear_ratio) * freq  + smear_ratio * ((normed_cpu_usage + 100.0) * 440.0 / 100.0) as f64;
+                freq = (1. - smear_ratio) * freq  + smear_ratio * ((normed_cpu_usage + norm_rat) * 110.0 / norm_rat) as f64;
             }
             ctr = 0;
         }
@@ -55,14 +58,17 @@ async fn audio(sink: tokio::sync::mpsc::Sender<Vec<i16>>) {
         let len = 960;
         dsp.update_and_compute(len, &inputs[..], &mut outputs[..]);
         let out_samples = outputs[0].to_vec().iter().map(|sample| {
-            dasp::sample::Sample::to_sample(*sample)
-        }).collect::<Vec<i16>>();
+            (
+                dasp::sample::Sample::to_sample(*sample),
+                dasp::sample::Sample::to_sample(*sample)
+            )
+        }).collect::<Vec<(i16, i16)>>();
         sink.send(out_samples).await;
         let _ = ticker.tick().await;
     }
 }
 
-pub fn spawn_audio_thread(sink: tokio::sync::mpsc::Sender<Vec<i16>>){
+pub fn spawn_audio_thread(sink: AudioThreadChannel){
     tokio::spawn(async move {
         audio(sink).await;
     });
