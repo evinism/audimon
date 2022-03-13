@@ -1,4 +1,5 @@
 mod webrtc_sink;
+mod local_sink;
 mod audio;
 
 use anyhow::Result;
@@ -25,8 +26,8 @@ async fn main() -> Result<()> {
                 .help("Prints debug log information"),
         )
         .arg(
-            Arg::new("localaudio")
-                .long("localaudio")
+            Arg::new("local")
+                .long("local")
                 .short('l')
                 .help("Output to the local computer")
         );
@@ -58,7 +59,12 @@ async fn main() -> Result<()> {
 
     let (audio_buf_tx, audio_buf_rx) = tokio::sync::mpsc::channel::<Vec<(i16, i16)>>(1);
     audio::spawn_audio_thread(audio_buf_tx);
-    webrtc_sink::init_webrtc_audio_destination(audio_buf_rx).await.unwrap();
+    if matches.is_present("local") {
+        local_sink::local_sink(audio_buf_rx);
+    } else {
+        webrtc_sink::webrtc_sink(audio_buf_rx).await.unwrap();
+    }
+
 
     Ok(())
 }

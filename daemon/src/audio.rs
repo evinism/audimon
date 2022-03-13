@@ -48,9 +48,11 @@ async fn audio(sink: AudioThreadChannel) {
         }
 
         // Process
-        let samples: [f32; 960] = [cpu_usage_smooth; 960];
+        let cpu_buffer: [f32; 960] = [cpu_usage_smooth; 960];
+        let mem_buffer: [f32; 960] = [mem_usage_smooth; 960];
         let mut inputs = SmallVec::<[&[f32]; 64]>::with_capacity(num_inputs as usize);
-        inputs.push(&samples[..]);
+        inputs.push(&cpu_buffer[..]);
+        inputs.push(&mem_buffer[..]);
         let mut one: [f32; 960] = [0.0; 960];
         let mut two: [f32; 960] = [0.0; 960];
         let mut outputs = SmallVec::<[&mut [f32]; 64]>::with_capacity(num_outputs as usize);
@@ -64,7 +66,7 @@ async fn audio(sink: AudioThreadChannel) {
                 dasp::sample::Sample::to_sample(*sample)
             )
         }).collect::<Vec<(i16, i16)>>();
-        sink.send(out_samples).await;
+        sink.send(out_samples).await.expect("Oh no! Sending didn't work!");
         let _ = ticker.tick().await;
         ctr += 1;
     }
