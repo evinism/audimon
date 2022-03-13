@@ -1,4 +1,3 @@
-use dasp::Signal;
 use tokio::time::Duration;
 use sysinfo::{System, SystemExt};
 use sysinfo::ProcessorExt;
@@ -15,7 +14,7 @@ type AudioThreadChannel = tokio::sync::mpsc::Sender<Vec<(i16, i16)>>;
 
 async fn audio(sink: AudioThreadChannel) {
     // DSP Init
-    let (mut dsp, mut state) = DspHandle::<faust::Volume>::new();
+    let (mut dsp, _state) = DspHandle::<faust::Volume>::new();
     dsp.init(48000 as i32);
     let num_inputs = dsp.num_inputs();
     let num_outputs = dsp.num_outputs();
@@ -28,7 +27,6 @@ async fn audio(sink: AudioThreadChannel) {
     let smear_ratio = 0.1;
     let mut cpu_usage_smooth = 0.0; // range [0, 1]
     let mut mem_usage_smooth = 0.0; // range [0, 1]
-    let mut ctr: i64 = 0;
 
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
     loop {
@@ -67,8 +65,7 @@ async fn audio(sink: AudioThreadChannel) {
             )
         }).collect::<Vec<(i16, i16)>>();
         sink.send(out_samples).await.expect("Oh no! Sending didn't work!");
-        let _ = ticker.tick().await;
-        ctr += 1;
+        ticker.tick().await;
     }
 }
 

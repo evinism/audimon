@@ -1,8 +1,5 @@
 use anyhow::Result;
 use bytes::Bytes;
-use clap::{AppSettings, Arg, Command};
-use dasp::Signal;
-use std::io::Write;
 use std::sync::Arc;
 use tokio::time::Duration;
 use webrtc::media::Sample;
@@ -18,11 +15,8 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::rtp_transceiver::rtp_codec::{
     RTCRtpCodecCapability, RTCRtpCodecParameters, RTPCodecType,
 };
-use webrtc::rtp_transceiver::rtp_receiver::RTCRtpReceiver;
-use webrtc::track::track_local::track_local_static_rtp::TrackLocalStaticRTP;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
-use webrtc::track::track_local::{TrackLocal, TrackLocalWriter};
-use webrtc::track::track_remote::TrackRemote;
+use webrtc::track::track_local::{TrackLocal};
 
 pub async fn webrtc_sink(
     mut audio_buf_rx: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>,
@@ -104,7 +98,7 @@ pub async fn webrtc_sink(
 
     // Set a handler for when a new remote track starts, this handler copies inbound RTP packets,
     // replaces the SSRC and sends them back
-    let pc = Arc::downgrade(&peer_connection);
+    let _pc = Arc::downgrade(&peer_connection);
 
     // Send a PLI on an interval so that the publisher is pushing a keyframe every rtcpPLIInterval
     // This is a temporary fix until we implement incoming RTCP events, then we would push a PLI only when a viewer requests it
