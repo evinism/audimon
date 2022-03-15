@@ -14,7 +14,7 @@ type AudioThreadChannel = tokio::sync::mpsc::Sender<Vec<(i16, i16)>>;
 
 async fn audio(sink: AudioThreadChannel) {
     // DSP Init
-    let (mut dsp, _state) = DspHandle::<faust::Volume>::new();
+    let (mut dsp, _state) = DspHandle::<faust::Sonify>::new();
     dsp.init(48000 as i32);
     let num_inputs = dsp.num_inputs();
     let num_outputs = dsp.num_outputs();
