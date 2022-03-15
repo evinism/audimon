@@ -14,9 +14,13 @@ volume = stereo(volumeM);
 
 /*
   Process has several inputs:
-  1: CPU usage (percentage)
-  2: Memory usage (percentage)
+  1: CPU usage (0 to 1)
 */
 
-process = _: os.osc(100 + 440 * _) <: volume : _,_;
+base_freq = 110;
+
+
+process = _ <: 
+  os.osc(base_freq * (1 + _)) * 0.15 +
+  os.osc(base_freq * (1 + 3 * _)) * _ <: volume : _,_;
 
