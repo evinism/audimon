@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     let (audio_buf_tx, audio_buf_rx) = tokio::sync::mpsc::channel::<Vec<(i16, i16)>>(1);
     audio::spawn_audio_thread(audio_buf_tx);
     if matches.is_present("local") {
-        local_sink::local_sink(audio_buf_rx).expect("Failed to start local audio.");
+        local_sink::local_sink(audio_buf_rx).await.expect("Failed to start local audio.");
     } else {
         webrtc_sink::webrtc_sink(audio_buf_rx).await.expect("Failed to start webrtc audio.");
     }

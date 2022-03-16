@@ -14,7 +14,7 @@ use dasp::ring_buffer::Fixed;
 use dasp::{interpolate::sinc::Sinc, ring_buffer, signal, Signal};
 
 
-pub fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) -> anyhow::Result<()> {
+pub async fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) -> Result<(), anyhow::Error> {
     let buffer =  RB::from([0f32; 2048]);
     let buf_ref_1 = Arc::new(Mutex::new(buffer));
     let buf_ref_2 = buf_ref_1.clone();
@@ -90,7 +90,12 @@ pub fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) 
             }
         }
     });
-    std::thread::sleep(std::time::Duration::from_millis(300000));
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            println!("");
+        }
+    };
     Ok(())
 }
 
