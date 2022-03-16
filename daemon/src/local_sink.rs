@@ -35,36 +35,21 @@ pub async fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i1
         cpal::SampleFormat::F32 => device.build_output_stream(
             &config.into(),
             move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                for frame in output.chunks_mut(request.nchannels) {
-                    let value: f32 = cpal::Sample::from::<f32>(&sampler(&mut request, &buf_ref_1));
-                    for sample in frame.iter_mut() {
-                        *sample = value;
-                    }
-                }
+                sampler(output, &mut request, &buf_ref_1);
             },
             err_fn,
         )?,
         cpal::SampleFormat::I16 => device.build_output_stream(
             &config.into(),
             move |output: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                for frame in output.chunks_mut(request.nchannels) {
-                    let value: i16 = cpal::Sample::from::<f32>(&sampler(&mut request, &buf_ref_1));
-                    for sample in frame.iter_mut() {
-                        *sample = value;
-                    }
-                }
+                sampler(output, &mut request, &buf_ref_1);
             },
             err_fn,
         )?,
         cpal::SampleFormat::U16 => device.build_output_stream(
             &config.into(),
             move |output: &mut [u16], _: &cpal::OutputCallbackInfo| {
-                for frame in output.chunks_mut(request.nchannels) {
-                    let value: u16 = cpal::Sample::from::<f32>(&sampler(&mut request, &buf_ref_1));
-                    for sample in frame.iter_mut() {
-                        *sample = value;
-                    }
-                }
+                sampler(output, &mut request, &buf_ref_1);
             },
             err_fn,
         )?,
@@ -99,16 +84,20 @@ pub async fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i1
     Ok(())
 }
 
-fn sampler(o: &mut SampleRequestOptions, buf_ref: &Arc<Mutex<RB<[f32;2048]>>>) -> f32 {
-    o.tick();
-    let res;
-    if let Ok(mut guard) = buf_ref.try_lock() {
-        res = guard.pop().unwrap_or(o.prev)
-    } else {
-        res = o.prev
+fn sampler<T: cpal::Sample>(output: &mut [T], request: &mut SampleRequestOptions, buf_ref: &Arc<Mutex<RB<[f32;2048]>>>) {
+    for frame in output.chunks_mut(request.nchannels) {
+        request.tick();
+        let res;
+        if let Ok(mut guard) = buf_ref.try_lock() {
+            res = guard.pop().unwrap_or(request.prev)
+        } else {
+            res = request.prev
+        }
+        request.prev = res;
+        for sample in frame.iter_mut() {
+            *sample = cpal::Sample::from::<f32>(&res);
+        }
     }
-    o.prev = res;
-    res
 }
 
 pub struct SampleRequestOptions {
