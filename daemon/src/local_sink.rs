@@ -10,6 +10,9 @@ use std::sync::{Arc, Mutex};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use dasp::sample::Sample;
 use dasp::ring_buffer::Bounded as RB;
+use dasp::ring_buffer::Fixed;
+use dasp::{interpolate::sinc::Sinc, ring_buffer, signal, Signal};
+
 
 pub fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) -> anyhow::Result<()> {
     let buffer =  RB::from([0f32; 2048]);
@@ -23,7 +26,8 @@ pub fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) 
     let mut request = SampleRequestOptions {
         sample_rate,
         nchannels,
-        sample_counter: 0
+        sample_counter: 0,
+        prev: 0.
     };
     let err_fn = |err| eprintln!("Error building output sound stream: {}", err);
 
@@ -68,11 +72,15 @@ pub fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) 
 
     stream.play()?;
     tokio::spawn(async move {
+        let rb = Fixed::from([0i16; 100]);
         loop {
-            let samples = audio_pipe.recv().await;
+            let frames = audio_pipe.recv().await;
+            let sinc = Sinc::new(rb);
+            //let new_signal = signal.from_hz_to_hz(sinc, 48000f64, sample_rate as f64);
+        
             if let Ok(mut guard) = buf_ref_2.try_lock() {
-                for sample in samples.iter() {
-                    for msg in sample.iter() {
+                for frame in frames.iter() {
+                    for msg in frame.iter() {
                         let out = Sample::to_sample::<f32>(
                             (msg.0 + msg.1) / 2
                         );
@@ -88,17 +96,21 @@ pub fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) 
 
 fn sampler(o: &mut SampleRequestOptions, buf_ref: &Arc<Mutex<RB<[f32;2048]>>>) -> f32 {
     o.tick();
+    let res;
     if let Ok(mut guard) = buf_ref.try_lock() {
-        guard.pop().unwrap_or(0.)
+        res = guard.pop().unwrap_or(o.prev)
     } else {
-        0.
+        res = o.prev
     }
+    o.prev = res;
+    res
 }
 
 pub struct SampleRequestOptions {
     pub sample_rate: f32,
     pub sample_counter: usize,
     pub nchannels: usize,
+    pub prev: f32,
 }
 
 impl SampleRequestOptions {
@@ -116,7 +128,15 @@ pub fn host_device_setup(
         .ok_or_else(|| anyhow::Error::msg("Default output device is not available"))?;
     println!("Output device : {}", device.name()?);
 
-    let config = device.default_output_config()?;
+    //let config = device.default_output_config()?;
+    let mut config = device.default_output_config()?;
+    for config_range in device.supported_output_configs()? {
+        let target = cpal::SampleRate(48000);
+        if (config_range.min_sample_rate() <= target) && (config_range.max_sample_rate() >= target) {
+            config = config_range.with_sample_rate(cpal::SampleRate(48000));
+        }
+    }
+
     println!("Default output config : {:?}", config);
 
     Ok((host, device, config))
