@@ -63,7 +63,7 @@ pub async fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i1
             let sinc = Sinc::new(rb);
             //let new_signal = signal.from_hz_to_hz(sinc, 48000f64, sample_rate as f64);
         
-            if let Ok(mut guard) = buf_ref_2.try_lock() {
+            if let Ok(mut guard) = buf_ref_2.lock() {
                 for frame in frames.iter() {
                     for msg in frame.iter() {
                         let out = Sample::to_sample::<f32>(
@@ -88,7 +88,7 @@ fn sampler<T: cpal::Sample>(output: &mut [T], request: &mut SampleRequestOptions
     for frame in output.chunks_mut(request.nchannels) {
         request.tick();
         let res;
-        if let Ok(mut guard) = buf_ref.try_lock() {
+        if let Ok(mut guard) = buf_ref.lock() {
             res = guard.pop().unwrap_or(request.prev)
         } else {
             res = request.prev
