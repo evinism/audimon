@@ -9,9 +9,10 @@ extern crate cpal;
 use std::sync::{Arc, Mutex};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use dasp::sample::Sample;
+use dasp::ring_buffer::Bounded as RB;
 
 pub fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) -> anyhow::Result<()> {
-    let buffer = Vec::<f32>::new();
+    let buffer =  RB::from([0f32; 2048]);
     let buf_ref_1 = Arc::new(Mutex::new(buffer));
     let buf_ref_2 = buf_ref_1.clone();
 
@@ -85,10 +86,10 @@ pub fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) 
     Ok(())
 }
 
-fn sampler(o: &mut SampleRequestOptions, buf_ref: &Arc<Mutex<Vec<f32>>>) -> f32 {
+fn sampler(o: &mut SampleRequestOptions, buf_ref: &Arc<Mutex<RB<[f32;2048]>>>) -> f32 {
     o.tick();
-    if let Ok(guard) = buf_ref.try_lock() {
-        guard[o.sample_counter]
+    if let Ok(mut guard) = buf_ref.try_lock() {
+        guard.pop().unwrap_or(0.)
     } else {
         0.
     }
