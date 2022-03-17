@@ -11,7 +11,10 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use dasp::sample::Sample;
 use dasp::ring_buffer::Bounded as RB;
 
-pub async fn local_sink(mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>) -> Result<(), anyhow::Error> {
+pub async fn local_sink(
+    mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>,
+    _done_tx: tokio::sync::mpsc::Sender<()>
+) -> Result<(), anyhow::Error> {
     let buffer =  RB::from([0f32; 2048]);
     let buf_ref_1 = Arc::new(Mutex::new(buffer));
     let buf_ref_2 = buf_ref_1.clone();

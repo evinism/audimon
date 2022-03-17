@@ -32,12 +32,27 @@ async fn main() -> Result<()> {
     }
 
     let (audio_buf_tx, audio_buf_rx) = tokio::sync::mpsc::channel::<Vec<(i16, i16)>>(1);
+    let (done_tx, mut done_rx) = tokio::sync::mpsc::channel::<()>(1);
+
     audio::spawn_audio_thread(audio_buf_tx);
     if matches.is_present("local") {
-        local_sink::local_sink(audio_buf_rx).await.expect("Failed to start local audio.");
+        local_sink::local_sink(audio_buf_rx, done_tx).await.expect("Failed to start local audio.");
     } else {
-        webrtc_sink::webrtc_sink(audio_buf_rx).await.expect("Failed to start webrtc audio.");
+        webrtc_sink::webrtc_sink(audio_buf_rx, done_tx).await.expect("Failed to start webrtc audio.");
     }
+
+    println!("Press ctrl-c to stop");
+    tokio::select! {
+        //_ = timeout.as_mut() => {
+        //    println!("received timeout signal!");
+        //}
+        _ = done_rx.recv() => {
+            println!("received done signal!");
+        }
+        _ = tokio::signal::ctrl_c() => {
+            println!("");
+        }
+    };
 
     Ok(())
 }

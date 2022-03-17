@@ -20,6 +20,7 @@ use webrtc::track::track_local::{TrackLocal};
 
 pub async fn webrtc_sink(
     mut audio_buf_rx: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>,
+    done_tx: tokio::sync::mpsc::Sender<()>,
 ) -> Result<(), anyhow::Error> {
     // Create a MediaEngine object to configure the supported codec
     let mut m = MediaEngine::default();
@@ -144,8 +145,6 @@ pub async fn webrtc_sink(
         }
     });
 
-    let (done_tx, mut done_rx) = tokio::sync::mpsc::channel::<()>(1);
-
     // Set the handler for Peer connection state
     // This will notify you when the peer has connected/disconnected
     peer_connection
@@ -186,23 +185,9 @@ pub async fn webrtc_sink(
     } else {
         println!("generate local_description failed!");
     }
-    println!("Press ctrl-c to stop");
     //let timeout = tokio::time::sleep(Duration::from_secs(20));
     //tokio::pin!(timeout);
-
-    tokio::select! {
-        //_ = timeout.as_mut() => {
-        //    println!("received timeout signal!");
-        //}
-        _ = done_rx.recv() => {
-            println!("received done signal!");
-        }
-        _ = tokio::signal::ctrl_c() => {
-            println!("");
-        }
-    };
-
-    peer_connection.close().await?;
-
+    // TODO: return cleanup closure.
+    // peer_connection.close().await?;
     return Ok(());
 }
