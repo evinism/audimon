@@ -17,10 +17,13 @@ volume = stereo(volumeM);
   1: CPU usage (0 to 1)
 */
 
+// Status tone!
 base_freq = 110;
+lo_freq(cpu) = base_freq * (1 + cpu);
+hi_freq(cpu) = base_freq * (1 + 3 * cpu);
+status_tone(cpu) = 
+  os.osc(lo_freq(cpu)) * 0.15 +
+  os.osc(hi_freq(cpu)) * cpu;
 
-
-process = _ <: 
-  os.osc(base_freq * (1 + _)) * 0.15 +
-  os.osc(base_freq * (1 + 3 * _)) * _ <: volume : _,_;
+process = _ : status_tone : _ * 0.5 <: volume : _,_;
 
