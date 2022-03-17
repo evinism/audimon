@@ -12,7 +12,7 @@ mod faust {
 type AudioThreadChannel = tokio::sync::mpsc::Sender<Vec<(i16, i16)>>;
 
 
-fn mount_positive_samples_in_buffer(num: usize) -> [f32; 960] {
+fn mount_positive_samples_in_buffer(num: isize) -> [f32; 960] {
     let mut samples_buffer: [f32; 960] = [0f32; 960];
     let mut rng = rand::thread_rng();
     for _ in 0..(num) {
@@ -73,21 +73,23 @@ async fn audio(sink: AudioThreadChannel) {
         // if we got a new one?
         let current_processes = sys.processes().len() as isize;
         let process_delta = current_processes - num_processes;
-        let process_delta = if process_delta > 0 { process_delta } else { 0 };
         num_processes = current_processes;
 
         // Create and populate buffers
         let cpu_buffer: [f32; 960] = [cpu_usage_smooth; 960];
         let mem_buffer: [f32; 960] = [mem_usage_smooth; 960];
 
-        let packet_buffer = mount_positive_samples_in_buffer(num_packets as usize);
-        let process_buffer = mount_positive_samples_in_buffer(process_delta as usize);
+        let packet_buffer = mount_positive_samples_in_buffer(num_packets as isize);
+        let pos_process_buffer = mount_positive_samples_in_buffer(if process_delta > 0 { process_delta } else { 0 });
+        let neg_process_buffer = mount_positive_samples_in_buffer(if process_delta < 0 { -process_delta } else { 0 });
+
 
         let mut inputs = SmallVec::<[&[f32]; 64]>::with_capacity(num_inputs as usize);
         inputs.push(&cpu_buffer[..]);
         inputs.push(&mem_buffer[..]);
         inputs.push(&packet_buffer[..]);
-        inputs.push(&process_buffer[..]);
+        inputs.push(&pos_process_buffer[..]);
+        inputs.push(&neg_process_buffer[..]);
         let mut one: [f32; 960] = [0.0; 960];
         let mut two: [f32; 960] = [0.0; 960];
         let mut outputs = SmallVec::<[&mut [f32]; 64]>::with_capacity(num_outputs as usize);
