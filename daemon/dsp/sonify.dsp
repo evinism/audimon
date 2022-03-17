@@ -25,8 +25,7 @@ status_tone(cpu_load, mem_load, _packet_stream) =
   os.osc(lo_freq(cpu_load)) * 0.125 +
   os.osc(hi_freq(cpu_load)) * cpu_load;
 
-packet_sounder(_cpu_load, _mem_load, packet_stream) = packet_stream * 0.1;
-  //sy.hat(3170, 10000, 0.005, 0.005, packet_stream);
+packet_sounder(_cpu_load, _mem_load, packet_stream) = packet_stream * 0.05;
 
 process = _, _, _ <: status_tone, packet_sounder :> _ * 0.25 <: volume : _,_;
 

@@ -1,6 +1,5 @@
 use tokio::time::Duration;
-use sysinfo::{System, SystemExt};
-use sysinfo::ProcessorExt;
+use sysinfo::{NetworkExt, NetworksExt, ProcessorExt,  ProcessExt, System, SystemExt};
 use faust_state::DspHandle;
 use smallvec::SmallVec;
 use rand::Rng;
@@ -35,6 +34,7 @@ async fn audio(sink: AudioThreadChannel) {
         // Gather Stats
         sys.refresh_cpu();
         sys.refresh_memory();
+        sys.refresh_networks();
 
         let total_cpu_usage: f32 = sys.processors().into_iter().map(|x| x.cpu_usage()).sum();
         let normed_cpu_usage_raw = total_cpu_usage / (sys.processors().len() as f32);
@@ -47,19 +47,26 @@ async fn audio(sink: AudioThreadChannel) {
             mem_usage_smooth = (1. - smear_ratio) * cpu_usage_smooth  + smear_ratio * normed_mem_usage_raw;
         }
 
-        // Process
+        // calculate num of packets
+        // Network interfaces name, data received and data transmitted:
+        let mut num_packets = 0;
+        for (interface_name, data) in sys.networks() {
+            num_packets += data.packets_received();
+        }
+
+        // Create and populate buffers
         let cpu_buffer: [f32; 960] = [cpu_usage_smooth; 960];
         let mem_buffer: [f32; 960] = [mem_usage_smooth; 960];
 
-        let num_packets = 1;
         let num_packets = if num_packets > 960 / 2 {960 / 2} else { num_packets };
         let mut packet_buffer: [f32; 960] = [0f32; 960];
         {
             let mut rng = rand::thread_rng();
-            for _ in 0..num_packets {
+            
+            for _ in 0..(num_packets) {
                 // at max, i want the packet buffer to be alternating 1s and 0s
                 let position: usize = rng.gen::<usize>() % (960 / 2);
-                packet_buffer[position * 2] = 1.0;
+                packet_buffer[position * 2] += 1.;
             }
         }
 
