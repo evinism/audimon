@@ -12,6 +12,17 @@ mod faust {
 type AudioThreadChannel = tokio::sync::mpsc::Sender<Vec<(i16, i16)>>;
 
 
+fn mount_positive_samples_in_buffer(num: usize) -> [f32; 960] {
+    let mut samples_buffer: [f32; 960] = [0f32; 960];
+    let mut rng = rand::thread_rng();
+    for _ in 0..(num) {
+        // at max, i want the packet buffer to be alternating 1s and 0s
+        let position: usize = rng.gen::<usize>() % (960 / 2);
+        samples_buffer[position * 2] += 1.;
+    };
+    samples_buffer
+}
+
 async fn audio(sink: AudioThreadChannel) {
     // DSP Init
     let (mut dsp, _state) = DspHandle::<faust::Sonify>::new();
@@ -27,14 +38,17 @@ async fn audio(sink: AudioThreadChannel) {
     let smear_ratio = 0.1;
     let mut cpu_usage_smooth = 0.0; // range [0, 1]
     let mut mem_usage_smooth = 0.0; // range [0, 1]
-
+    let mut num_processes = sys.processes().len() as isize;
 
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
     loop {
         // Gather Stats
+        // TODO: Start measuring how long this section takes
+        // also ensure it doesn't exceed sample_time.
         sys.refresh_cpu();
         sys.refresh_memory();
         sys.refresh_networks();
+        sys.refresh_processes();// should this happen only every other time?
 
         let total_cpu_usage: f32 = sys.processors().into_iter().map(|x| x.cpu_usage()).sum();
         let normed_cpu_usage_raw = total_cpu_usage / (sys.processors().len() as f32);
@@ -50,31 +64,30 @@ async fn audio(sink: AudioThreadChannel) {
         // calculate num of packets
         // Network interfaces name, data received and data transmitted:
         let mut num_packets = 0;
-        for (interface_name, data) in sys.networks() {
+        for (_, data) in sys.networks() {
             num_packets += data.packets_received();
         }
+
+        // TODO: What happens when we get a process added and removed at the same time?
+        // Do we maintain a list of processes and try to match current list to prev to tell
+        // if we got a new one?
+        let current_processes = sys.processes().len() as isize;
+        let process_delta = current_processes - num_processes;
+        let process_delta = if process_delta > 0 { process_delta } else { 0 };
+        num_processes = current_processes;
 
         // Create and populate buffers
         let cpu_buffer: [f32; 960] = [cpu_usage_smooth; 960];
         let mem_buffer: [f32; 960] = [mem_usage_smooth; 960];
 
-        let num_packets = if num_packets > 960 / 2 {960 / 2} else { num_packets };
-        let mut packet_buffer: [f32; 960] = [0f32; 960];
-        {
-            let mut rng = rand::thread_rng();
-            
-            for _ in 0..(num_packets) {
-                // at max, i want the packet buffer to be alternating 1s and 0s
-                let position: usize = rng.gen::<usize>() % (960 / 2);
-                packet_buffer[position * 2] += 1.;
-            }
-        }
-
+        let packet_buffer = mount_positive_samples_in_buffer(num_packets as usize);
+        let process_buffer = mount_positive_samples_in_buffer(process_delta as usize);
 
         let mut inputs = SmallVec::<[&[f32]; 64]>::with_capacity(num_inputs as usize);
         inputs.push(&cpu_buffer[..]);
         inputs.push(&mem_buffer[..]);
         inputs.push(&packet_buffer[..]);
+        inputs.push(&process_buffer[..]);
         let mut one: [f32; 960] = [0.0; 960];
         let mut two: [f32; 960] = [0.0; 960];
         let mut outputs = SmallVec::<[&mut [f32]; 64]>::with_capacity(num_outputs as usize);
