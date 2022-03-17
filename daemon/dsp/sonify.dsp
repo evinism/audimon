@@ -21,9 +21,12 @@ volume = stereo(volumeM);
 base_freq = 110;
 lo_freq(cpu) = base_freq * (1 + cpu);
 hi_freq(cpu) = base_freq * (1 + 3 * cpu);
-status_tone(cpu) = 
-  os.osc(lo_freq(cpu)) * 0.15 +
-  os.osc(hi_freq(cpu)) * cpu;
+status_tone(cpu_load, mem_load, _packet_stream) = 
+  os.osc(lo_freq(cpu_load)) * 0.125 +
+  os.osc(hi_freq(cpu_load)) * cpu_load;
 
-process = _ : status_tone : _ * 0.5 <: volume : _,_;
+packet_sounder(_cpu_load, _mem_load, packet_stream) = packet_stream * 0.1;
+  //sy.hat(3170, 10000, 0.005, 0.005, packet_stream);
+
+process = _, _, _ <: status_tone, packet_sounder :> _ * 0.25 <: volume : _,_;
 

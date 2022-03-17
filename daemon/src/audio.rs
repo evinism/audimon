@@ -3,6 +3,7 @@ use sysinfo::{System, SystemExt};
 use sysinfo::ProcessorExt;
 use faust_state::DspHandle;
 use smallvec::SmallVec;
+use rand::Rng;
 
 
 mod faust {
@@ -28,6 +29,7 @@ async fn audio(sink: AudioThreadChannel) {
     let mut cpu_usage_smooth = 0.0; // range [0, 1]
     let mut mem_usage_smooth = 0.0; // range [0, 1]
 
+
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
     loop {
         // Gather Stats
@@ -48,9 +50,24 @@ async fn audio(sink: AudioThreadChannel) {
         // Process
         let cpu_buffer: [f32; 960] = [cpu_usage_smooth; 960];
         let mem_buffer: [f32; 960] = [mem_usage_smooth; 960];
+
+        let num_packets = 1;
+        let num_packets = if num_packets > 960 / 2 {960 / 2} else { num_packets };
+        let mut packet_buffer: [f32; 960] = [0f32; 960];
+        {
+            let mut rng = rand::thread_rng();
+            for _ in 0..num_packets {
+                // at max, i want the packet buffer to be alternating 1s and 0s
+                let position: usize = rng.gen::<usize>() % (960 / 2);
+                packet_buffer[position * 2] = 1.0;
+            }
+        }
+
+
         let mut inputs = SmallVec::<[&[f32]; 64]>::with_capacity(num_inputs as usize);
         inputs.push(&cpu_buffer[..]);
         inputs.push(&mem_buffer[..]);
+        inputs.push(&packet_buffer[..]);
         let mut one: [f32; 960] = [0.0; 960];
         let mut two: [f32; 960] = [0.0; 960];
         let mut outputs = SmallVec::<[&mut [f32]; 64]>::with_capacity(num_outputs as usize);
