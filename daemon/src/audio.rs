@@ -1,5 +1,5 @@
 use tokio::time::Duration;
-use sysinfo::{NetworkExt, NetworksExt, ProcessorExt,  ProcessExt, System, SystemExt};
+use sysinfo::{NetworkExt, ProcessorExt, System, SystemExt};
 use faust_state::DspHandle;
 use smallvec::SmallVec;
 use rand::Rng;
@@ -9,18 +9,42 @@ mod faust {
     include!(concat!(env!("OUT_DIR"), "/dsp.rs"));
 }
 
+const SMEAR_RATIO: f32 = 0.1;
+const FRAME_SIZE: usize = 960;
+
 type AudioThreadChannel = tokio::sync::mpsc::Sender<Vec<(i16, i16)>>;
+type AudioFrame = [f32; FRAME_SIZE];
 
 
-fn mount_positive_samples_in_buffer(num: isize) -> [f32; 960] {
-    let mut samples_buffer: [f32; 960] = [0f32; 960];
+fn mount_positive_samples_in_buffer(num: isize) -> AudioFrame {
+    let mut samples_buffer: AudioFrame = [0f32; FRAME_SIZE];
     let mut rng = rand::thread_rng();
     for _ in 0..(num) {
         // at max, i want the packet buffer to be alternating 1s and 0s
-        let position: usize = rng.gen::<usize>() % (960 / 2);
+        let position: usize = rng.gen::<usize>() % (FRAME_SIZE / 2);
         samples_buffer[position * 2] += 1.;
     };
     samples_buffer
+}
+
+
+fn cpu_buf(sys: &mut System, cpu_usage_smooth: &mut f32) -> AudioFrame {
+    sys.refresh_cpu();
+    let total_cpu_usage: f32 = sys.processors().into_iter().map(|x| x.cpu_usage()).sum();
+    let normed_cpu_usage_raw = total_cpu_usage / (sys.processors().len() as f32);
+    if normed_cpu_usage_raw.is_normal() {
+        *cpu_usage_smooth = (1. - SMEAR_RATIO) * (*cpu_usage_smooth)  + SMEAR_RATIO * (normed_cpu_usage_raw / 100.0);
+    };
+    [*cpu_usage_smooth; FRAME_SIZE]
+}
+
+fn mem_buf(sys: &mut System, mem_usage_smooth: &mut f32) -> AudioFrame {
+    sys.refresh_memory();
+    let normed_mem_usage_raw = sys.used_memory() as f32 / sys.total_memory() as f32;
+    if normed_mem_usage_raw.is_normal() {
+        *mem_usage_smooth = (1. - SMEAR_RATIO) * (*mem_usage_smooth)  + SMEAR_RATIO * normed_mem_usage_raw;
+    }
+    [*mem_usage_smooth; FRAME_SIZE]
 }
 
 async fn audio(sink: AudioThreadChannel) {
@@ -35,7 +59,6 @@ async fn audio(sink: AudioThreadChannel) {
     //
     let mut sys = System::new_all();
     sys.refresh_all();
-    let smear_ratio = 0.1;
     let mut cpu_usage_smooth = 0.0; // range [0, 1]
     let mut mem_usage_smooth = 0.0; // range [0, 1]
     let mut num_processes = sys.processes().len() as isize;
@@ -45,21 +68,8 @@ async fn audio(sink: AudioThreadChannel) {
         // Gather Stats
         // TODO: Start measuring how long this section takes
         // also ensure it doesn't exceed sample_time.
-        sys.refresh_cpu();
-        sys.refresh_memory();
         sys.refresh_networks();
         sys.refresh_processes();// should this happen only every other time?
-
-        let total_cpu_usage: f32 = sys.processors().into_iter().map(|x| x.cpu_usage()).sum();
-        let normed_cpu_usage_raw = total_cpu_usage / (sys.processors().len() as f32);
-        if normed_cpu_usage_raw.is_normal() {
-            cpu_usage_smooth = (1. - smear_ratio) * cpu_usage_smooth  + smear_ratio * (normed_cpu_usage_raw / 100.0);
-        }
-
-        let normed_mem_usage_raw = sys.used_memory() as f32 / sys.total_memory() as f32;
-        if normed_mem_usage_raw.is_normal() {
-            mem_usage_smooth = (1. - smear_ratio) * cpu_usage_smooth  + smear_ratio * normed_mem_usage_raw;
-        }
 
         // calculate num of packets
         // Network interfaces name, data received and data transmitted:
@@ -76,8 +86,8 @@ async fn audio(sink: AudioThreadChannel) {
         num_processes = current_processes;
 
         // Create and populate buffers
-        let cpu_buffer: [f32; 960] = [cpu_usage_smooth; 960];
-        let mem_buffer: [f32; 960] = [mem_usage_smooth; 960];
+        let cpu_buffer: AudioFrame = cpu_buf(&mut sys, &mut cpu_usage_smooth);
+        let mem_buffer: AudioFrame = mem_buf(&mut sys, &mut mem_usage_smooth);
 
         let packet_buffer = mount_positive_samples_in_buffer(num_packets as isize);
         let pos_process_buffer = mount_positive_samples_in_buffer(if process_delta > 0 { process_delta } else { 0 });
@@ -90,13 +100,13 @@ async fn audio(sink: AudioThreadChannel) {
         inputs.push(&packet_buffer[..]);
         inputs.push(&pos_process_buffer[..]);
         inputs.push(&neg_process_buffer[..]);
-        let mut one: [f32; 960] = [0.0; 960];
-        let mut two: [f32; 960] = [0.0; 960];
+        let mut one: AudioFrame = [0.0; FRAME_SIZE];
+        let mut two: AudioFrame = [0.0; FRAME_SIZE];
         let mut outputs = SmallVec::<[&mut [f32]; 64]>::with_capacity(num_outputs as usize);
         outputs.push(&mut one);
         outputs.push(&mut two);
-        let len = 960;
-        dsp.update_and_compute(len, &inputs[..], &mut outputs[..]);
+        let len = FRAME_SIZE;
+        dsp.update_and_compute(len as i32, &inputs[..], &mut outputs[..]);
         let out_samples = outputs[0].to_vec().iter().map(|sample| {
             (
                 dasp::sample::Sample::to_sample(*sample),
