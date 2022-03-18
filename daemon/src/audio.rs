@@ -47,6 +47,30 @@ fn mem_buf(sys: &mut System, mem_usage_smooth: &mut f32) -> AudioFrame {
     [*mem_usage_smooth; FRAME_SIZE]
 }
 
+fn packet_buf(sys: &mut System) -> AudioFrame {
+    sys.refresh_networks();
+    let mut num_packets = 0;
+    for (_, data) in sys.networks() {
+        num_packets += data.packets_received();
+    }
+    mount_positive_samples_in_buffer(num_packets as isize)
+}
+
+fn process_buf(sys: &mut System, prev_num_of_processes: &mut isize) -> (AudioFrame, AudioFrame) {
+    sys.refresh_processes();
+
+    // TODO: What happens when we get a process added and removed at the same time?
+    // Do we maintain a list of processes and try to match current list to prev to tell
+    // if we got a new one?
+    let current_processes = sys.processes().len() as isize;
+    let process_delta = current_processes - *prev_num_of_processes;
+    *prev_num_of_processes = current_processes;
+
+    let pos_process_buffer = mount_positive_samples_in_buffer(if process_delta > 0 { process_delta } else { 0 });
+    let neg_process_buffer = mount_positive_samples_in_buffer(if process_delta < 0 { -process_delta } else { 0 });
+    (pos_process_buffer, neg_process_buffer)
+}
+
 async fn audio(sink: AudioThreadChannel) {
     // DSP Init
     let (mut dsp, _state) = DspHandle::<faust::Sonify>::new();
@@ -65,33 +89,12 @@ async fn audio(sink: AudioThreadChannel) {
 
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
     loop {
-        // Gather Stats
-        // TODO: Start measuring how long this section takes
-        // also ensure it doesn't exceed sample_time.
-        sys.refresh_networks();
-        sys.refresh_processes();// should this happen only every other time?
-
-        // calculate num of packets
-        // Network interfaces name, data received and data transmitted:
-        let mut num_packets = 0;
-        for (_, data) in sys.networks() {
-            num_packets += data.packets_received();
-        }
-
-        // TODO: What happens when we get a process added and removed at the same time?
-        // Do we maintain a list of processes and try to match current list to prev to tell
-        // if we got a new one?
-        let current_processes = sys.processes().len() as isize;
-        let process_delta = current_processes - num_processes;
-        num_processes = current_processes;
-
         // Create and populate buffers
         let cpu_buffer: AudioFrame = cpu_buf(&mut sys, &mut cpu_usage_smooth);
         let mem_buffer: AudioFrame = mem_buf(&mut sys, &mut mem_usage_smooth);
 
-        let packet_buffer = mount_positive_samples_in_buffer(num_packets as isize);
-        let pos_process_buffer = mount_positive_samples_in_buffer(if process_delta > 0 { process_delta } else { 0 });
-        let neg_process_buffer = mount_positive_samples_in_buffer(if process_delta < 0 { -process_delta } else { 0 });
+        let packet_buffer = packet_buf(&mut sys);
+        let (pos_process_buffer, neg_process_buffer) = process_buf(&mut sys, &mut num_processes);
 
 
         let mut inputs = SmallVec::<[&[f32]; 64]>::with_capacity(num_inputs as usize);
