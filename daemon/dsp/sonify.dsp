@@ -17,6 +17,9 @@ volume = stereo(volumeM);
   1: CPU usage (0 to 1)
 */
 
+
+derivative = _ : an.abs_envelope_rect(0.2) <: _ , @(100) : _ - _ : abs : _;
+
 // Status tone!
 base_freq = 110;
 lo_freq(cpu) = base_freq * (1 + cpu);
@@ -27,8 +30,10 @@ status_tone(
   packet_stream,
   pos_process_stream,
   neg_process_stream
-) =  os.osc(lo_freq(cpu_load)) * 0.125 +
-  os.osc(hi_freq(cpu_load)) * cpu_load;
+) = (
+        os.osc(lo_freq(cpu_load)) / 16 + 
+        os.osc(hi_freq(cpu_load)) * cpu_load
+    ) * (derivative(cpu_load) * 400  + 0.1);
 
 packet_sounder(
   cpu_load,
@@ -44,8 +49,8 @@ process_sounder(
   packet_stream,
   pos_process_stream,
   neg_process_stream
-) = sy.combString(lo_freq(cpu_load) * 1.5 * 2, 0.5, pos_process_stream) * 0.2 +
-    sy.combString(lo_freq(cpu_load) * 1.5, 0.5, neg_process_stream) * 0.2;
+) = sy.combString(hi_freq(cpu_load) * 2, 0.5, pos_process_stream) * 0.2 +
+    sy.combString(hi_freq(cpu_load), 0.5, neg_process_stream) * 0.2;
 
 process = _, _, _, _, _ <: status_tone, process_sounder, packet_sounder :> _ * 0.25 <: volume : _,_;
 
