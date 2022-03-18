@@ -44,8 +44,8 @@ process_sounder(
   packet_stream,
   pos_process_stream,
   neg_process_stream
-) = sy.combString(lo_freq(cpu_load) * 1.5 * 2, 0.5, pos_process_stream) * 0.5 +
-    sy.combString(lo_freq(cpu_load) * 1.5, 0.5, neg_process_stream) * 0.5;
+) = sy.combString(lo_freq(cpu_load) * 1.5 * 2, 0.5, pos_process_stream) * 0.2 +
+    sy.combString(lo_freq(cpu_load) * 1.5, 0.5, neg_process_stream) * 0.2;
 
 process = _, _, _, _, _ <: status_tone, process_sounder, packet_sounder :> _ * 0.25 <: volume : _,_;
 
