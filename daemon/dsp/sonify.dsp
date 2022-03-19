@@ -19,6 +19,7 @@ volume = stereo(volumeM);
 
 positive_only(sig) = select2(sig >= 0, 0, sig);
 derivative = _ <: _, @(1)  : _ - _ : positive_only : an.abs_envelope_rect(0.2) : _;
+power(sig, num) = prod(i, num, sig);
 
 
 // Status tone!
@@ -64,7 +65,7 @@ process_sounder(
     sy.combString(hi_freq(cpu_load) * 2, 0.1, pos_process_stream) * 0.2, 
     sy.combString(hi_freq(cpu_load), 0.1, neg_process_stream) * 0.2 : ef.stereo_width(0.5, _, _) : _, _;
 
-swap_alerter(
+memory_pressure_aleter(
   cpu_load, 
   mem_load,
   incoming_packet_stream,
@@ -72,7 +73,7 @@ swap_alerter(
   pos_process_stream,
   neg_process_stream
 ) = 
-  os.lf_squarewavepos(2) : _ * 0.5 : _ + 1 : hi_freq(cpu_load) * _ : os.square : _ * 0.1  <: _, _;
+  os.lf_squarewavepos(2) : _ * 0.5 : _ + 1 : hi_freq(cpu_load) * _ : os.square : _ * power(mem_load, 25) * 0.1  <: _, _;
 
-process = _, _, _, _, _, _ <: status_tone, process_sounder, packet_sounder :> _ * 0.25, _ * 0.25 : volume : _,_;
+process = _, _, _, _, _, _ <: status_tone, process_sounder, packet_sounder, memory_pressure_aleter :> _ * 0.25, _ * 0.25 : volume : _,_;
 
