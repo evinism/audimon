@@ -15,7 +15,7 @@ pub async fn local_sink(
     mut audio_pipe: tokio::sync::mpsc::Receiver<Vec<(i16, i16)>>,
     _done_tx: tokio::sync::mpsc::Sender<()>
 ) -> Result<(), anyhow::Error> {
-    let buffer =  RB::from([0f32; 2048]);
+    let buffer =  (RB::from([0f32; 2048]), RB::from([0f32; 2048]));
     let buf_ref_1 = Arc::new(Mutex::new(buffer));
     let buf_ref_2 = buf_ref_1.clone();
 
@@ -73,10 +73,14 @@ pub async fn local_sink(
             if let Ok(mut guard) = buf_ref_2.lock() {
                 for frame in frames.iter() {
                     for msg in frame.iter() {
-                        let out = Sample::to_sample::<f32>(
-                            (msg.0 + msg.1) / 2
+                        let out0 = Sample::to_sample::<f32>(
+                            msg.0
                         );
-                        guard.push(Sample::from_sample(out));
+                        let out1 = Sample::to_sample::<f32>(
+                            msg.1
+                        );
+                        guard.0.push(Sample::from_sample(out0));
+                        guard.1.push(Sample::from_sample(out1));
                     }
                 }
             }
@@ -91,17 +95,26 @@ pub async fn local_sink(
     Ok(())
 }
 
-fn sampler<T: cpal::Sample>(output: &mut [T], channels: usize, last_sample: &mut f32, buf_ref: &Arc<Mutex<RB<[f32;2048]>>>) {
-    for frame in output.chunks_mut(channels) {
-        let res;
+type SharedBufReference = Arc<Mutex<(RB<[f32;2048]>, RB<[f32;2048]>)>>;
+
+
+fn sampler<T: cpal::Sample>(output: &mut [T], channels: usize, last_sample: &mut f32, buf_ref: &SharedBufReference) {
+    let mut sample_count = 0;
+    for stereo_sample in output.chunks_mut(channels) {
+        let left: f32;
+        let right: f32;
         if let Ok(mut guard) = buf_ref.lock() {
-            res = guard.pop().unwrap_or(*last_sample)
+            left = guard.0.pop().unwrap_or(*last_sample);
+            right = guard.1.pop().unwrap_or(*last_sample);
         } else {
-            res = *last_sample
+            left = 0.;//*last_sample;
+            right = 0.;//*last_sample;
         }
-        *last_sample = res;
-        for sample in frame.iter_mut() {
+        //*last_sample = res;
+        for sample in stereo_sample.iter_mut() {
+            let res = if (sample_count % 2) == 0 { right } else { left };
             *sample = cpal::Sample::from::<f32>(&res);
+            sample_count += 1;
         }
     }
 }

@@ -35,7 +35,13 @@ status_tone(
 ) = (
         os.osc(lo_freq(cpu_load)) / 4 + 
         os.osc(hi_freq(cpu_load))
-    ) * (derivative(cpu_load) * 10  + cpu_load * 0.1);
+    ) * (derivative(cpu_load) * 10  + cpu_load * 0.1) <: _, _;
+
+
+neg_respecting_square = _ <: _ * _ * _;
+
+
+randompan(sig) = no.noise : (neg_respecting_square(_) / 2)  + 0.5 <: _ * sig, (1 - _) * sig;
 
 packet_sounder(
   cpu_load,
@@ -43,7 +49,9 @@ packet_sounder(
   packet_stream,
   pos_process_stream,
   neg_process_stream
-) = packet_stream * 0.05;
+) = packet_stream * 0.1 : randompan : _ , _ ;
+
+
 
 process_sounder(
   cpu_load, 
@@ -52,7 +60,7 @@ process_sounder(
   pos_process_stream,
   neg_process_stream
 ) = sy.combString(hi_freq(cpu_load) * 2, 0.5, pos_process_stream) * 0.2 +
-    sy.combString(hi_freq(cpu_load), 0.5, neg_process_stream) * 0.2;
+    sy.combString(hi_freq(cpu_load), 0.5, neg_process_stream) * 0.2 <: _, _;
 
-process = _, _, _, _, _ <: status_tone, process_sounder, packet_sounder :> _ * 0.25 <: volume : _,_;
+process = _, _, _, _, _ <: status_tone, process_sounder, packet_sounder :> _ * 0.25, _ * 0.25 : volume : _,_;
 
