@@ -73,7 +73,7 @@ memory_pressure_aleter(
   pos_process_stream,
   neg_process_stream
 ) = 
-  os.lf_squarewavepos(2) : _ * 0.5 : _ + 1 : hi_freq(cpu_load) * _ : os.square : _ * power(mem_load, 25) * 0.1  <: _, _;
+  os.lf_squarewavepos((2 / (1.2 - power(mem_load, 10)))) : _ * 0.5 + 1 : hi_freq(cpu_load) * _ : os.square : _ * power(mem_load, 25) * 0.05 <: _, _;
 
 process = _, _, _, _, _, _ <: status_tone, process_sounder, packet_sounder, memory_pressure_aleter :> _ * 0.25, _ * 0.25 : volume : _,_;
 
