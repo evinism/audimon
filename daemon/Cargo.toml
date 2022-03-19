@@ -30,7 +30,6 @@ sysinfo = "0.23.5"
 cpal = "0.13.5"
 smallvec = "1.6.1"
 rand = "0.8.5"
-itertools = "0.10.3"
 faust-types = { path = "../rust-faust/faust-types" }
 faust-state = { path = "../rust-faust/faust-state" }
 

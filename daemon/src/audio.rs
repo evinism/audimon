@@ -1,5 +1,5 @@
 use tokio::time::Duration;
-use sysinfo::{NetworkExt, ProcessorExt, System, SystemExt};
+use sysinfo::{NetworkExt, ProcessorExt, System, SystemExt,  PidExt};
 use faust_state::DspHandle;
 use smallvec::SmallVec;
 use rand::Rng;
@@ -28,7 +28,6 @@ fn mount_positive_samples_in_buffer(num: usize) -> AudioFrame {
     };
     samples_buffer
 }
-
 
 fn cpu_buf(sys: &mut System, cpu_usage_smooth: &mut f32) -> AudioFrame {
     // Smoothed
@@ -74,18 +73,56 @@ fn get_process_set(sys: &System) -> HashSet<sysinfo::Pid> {
     sys.processes().keys().cloned().collect()
 }
 
-fn process_buf(sys: &mut System, prev_process_set: &mut HashSet<sysinfo::Pid>) -> (AudioFrame, AudioFrame) {
+// Going to return: 
+fn mount_processes_in_buffer(set: &HashSet<&sysinfo::Pid>, prev_pan: &mut f32) -> (AudioFrame, AudioFrame) {
+    let mut samples_buffer: AudioFrame = [0f32; FRAME_SIZE];
+    // 1   0   0   0   1 
+    // 0.4 0.4 0.4 0.4 -.9
+    let mut panning_buffer: AudioFrame = [*prev_pan; FRAME_SIZE];
+    let mut rng = rand::thread_rng();
+    for pid in set.into_iter() {
+        // at max, i want the packet buffer to be alternating 1s and 0s
+        let position = rng.gen::<usize>() % (FRAME_SIZE / 2);
+        samples_buffer[position * 2] += 1.;
+        let mut current = (position * 2) + 1;
+
+        // Really really bad hash function that doesn't really actually matter
+        let pan = ((pid.as_u32() * 1337  % 256) as f32) / 128.0 - 1.;
+
+
+        while (current < FRAME_SIZE) & (samples_buffer[current] != 1.) {
+            panning_buffer[current] = pan;
+            current += 1;
+            if current >= FRAME_SIZE {
+                *prev_pan = pan;
+                break;
+            }
+        }
+    };
+    (samples_buffer, panning_buffer)
+}
+
+// spawned, spawned_pan, dropped, dropped_pan
+fn process_buf(
+    sys: &mut System, 
+    prev_process_set: &mut HashSet<sysinfo::Pid>, 
+    prev_pan_spawned: &mut f32,
+    prev_pan_dropped: &mut f32,
+) -> (AudioFrame, AudioFrame, AudioFrame, AudioFrame) {
     sys.refresh_processes();
     let new_processs_set = get_process_set(&sys);
 
-    let spawned = new_processs_set.difference(&prev_process_set).count();
-    let dropped = prev_process_set.difference(&new_processs_set).count();
+    let spawned = new_processs_set.difference(&prev_process_set).collect::<HashSet<&sysinfo::Pid>>();
+    let dropped = prev_process_set.difference(&new_processs_set).collect::<HashSet<&sysinfo::Pid>>();
 
-    let pos_process_buffer = mount_positive_samples_in_buffer(spawned);
-    let neg_process_buffer = mount_positive_samples_in_buffer(dropped);
+    let (pos_process_buffer, pos_pan_buffer) = mount_processes_in_buffer(&spawned, prev_pan_spawned);
+    let (neg_process_buffer, neg_pan_buffer) = mount_processes_in_buffer(&dropped, prev_pan_dropped);
+
+    // 1000000000000100000000100000001000000100001000000000100.
+    // -.8,-.8,-.8,-.3,-.3,-.3,
 
     *prev_process_set = new_processs_set;
-    (pos_process_buffer, neg_process_buffer)
+    (pos_process_buffer, pos_pan_buffer, neg_process_buffer, neg_pan_buffer)
 }
 
 async fn audio(sink: AudioThreadChannel) {
@@ -102,6 +139,8 @@ async fn audio(sink: AudioThreadChannel) {
     sys.refresh_all();
     let mut cpu_usage_smooth = 0.0; // range [0, 1]
     let mut mem_usage_smooth = 0.0; // range [0, 1]
+    let mut prev_pan_spawned = 0f32;
+    let mut prev_pan_dropped = 0f32;
     let mut process_set = get_process_set(&sys);
 
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
@@ -111,7 +150,17 @@ async fn audio(sink: AudioThreadChannel) {
         let mem_buffer: AudioFrame = mem_buf(&mut sys, &mut mem_usage_smooth);
 
         let (inc_packet_buffer, out_packet_buffer) = packet_buf(&mut sys);
-        let (pos_process_buffer, neg_process_buffer) = process_buf(&mut sys, &mut process_set);
+        let (
+            pos_process_buffer,
+            pos_pan_buffer,
+            neg_process_buffer,
+            neg_pan_buffer,
+        ) = process_buf(
+            &mut sys,
+            &mut process_set,
+            &mut prev_pan_spawned,
+            &mut prev_pan_dropped
+        );
 
         let inputs = SmallVec::from([
             &cpu_buffer[..],
@@ -119,8 +168,12 @@ async fn audio(sink: AudioThreadChannel) {
             &inc_packet_buffer[..],
             &out_packet_buffer[..],
             &pos_process_buffer[..],
+            &pos_pan_buffer[..],
             &neg_process_buffer[..],
+            &neg_pan_buffer[..],
         ]);
+
+        //print!("{:?}", pos_pan_buffer);
 
         let mut one: AudioFrame = [0.0; FRAME_SIZE];
         let mut two: AudioFrame = [0.0; FRAME_SIZE];
