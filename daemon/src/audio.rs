@@ -47,13 +47,18 @@ fn mem_buf(sys: &mut System, mem_usage_smooth: &mut f32) -> AudioFrame {
     [*mem_usage_smooth; FRAME_SIZE]
 }
 
-fn packet_buf(sys: &mut System) -> AudioFrame {
+fn packet_buf(sys: &mut System) -> (AudioFrame, AudioFrame) {
     sys.refresh_networks();
-    let mut num_packets = 0;
+    let mut num_inc_packets = 0;
+    let mut num_out_packets = 0;
     for (_, data) in sys.networks() {
-        num_packets += data.packets_received();
-    }
-    mount_positive_samples_in_buffer(num_packets as isize)
+        num_inc_packets += data.packets_received();
+        num_out_packets += data.packets_transmitted();
+    };
+    (
+        mount_positive_samples_in_buffer(num_inc_packets as isize),
+        mount_positive_samples_in_buffer(num_out_packets as isize)
+    )
 }
 
 fn process_buf(sys: &mut System, prev_num_of_processes: &mut isize) -> (AudioFrame, AudioFrame) {
@@ -93,14 +98,15 @@ async fn audio(sink: AudioThreadChannel) {
         let cpu_buffer: AudioFrame = cpu_buf(&mut sys, &mut cpu_usage_smooth);
         let mem_buffer: AudioFrame = mem_buf(&mut sys, &mut mem_usage_smooth);
 
-        let packet_buffer = packet_buf(&mut sys);
+        let (inc_packet_buffer, out_packet_buffer) = packet_buf(&mut sys);
         let (pos_process_buffer, neg_process_buffer) = process_buf(&mut sys, &mut num_processes);
 
 
         let mut inputs = SmallVec::<[&[f32]; 64]>::with_capacity(num_inputs as usize);
         inputs.push(&cpu_buffer[..]);
         inputs.push(&mem_buffer[..]);
-        inputs.push(&packet_buffer[..]);
+        inputs.push(&inc_packet_buffer[..]);
+        inputs.push(&out_packet_buffer[..]);
         inputs.push(&pos_process_buffer[..]);
         inputs.push(&neg_process_buffer[..]);
         let mut one: AudioFrame = [0.0; FRAME_SIZE];
