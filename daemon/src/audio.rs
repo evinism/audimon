@@ -3,6 +3,7 @@ use sysinfo::{NetworkExt, ProcessorExt, System, SystemExt};
 use faust_state::DspHandle;
 use smallvec::SmallVec;
 use rand::Rng;
+use std::collections::HashSet;
 
 
 mod faust {
@@ -68,18 +69,21 @@ fn packet_buf(sys: &mut System) -> (AudioFrame, AudioFrame) {
     )
 }
 
-fn process_buf(sys: &mut System, prev_num_of_processes: &mut isize) -> (AudioFrame, AudioFrame) {
+fn get_process_set(sys: &System) -> HashSet<sysinfo::Pid> {
+    sys.processes().keys().cloned().collect()
+}
+
+fn process_buf(sys: &mut System, prev_process_set: &mut HashSet<sysinfo::Pid>) -> (AudioFrame, AudioFrame) {
     sys.refresh_processes();
+    let new_processs_set = get_process_set(&sys);
 
-    // TODO: What happens when we get a process added and removed at the same time?
-    // Do we maintain a list of processes and try to match current list to prev to tell
-    // if we got a new one?
-    let current_processes = sys.processes().len() as isize;
-    let process_delta = current_processes - *prev_num_of_processes;
-    *prev_num_of_processes = current_processes;
+    let spawned = new_processs_set.difference(&prev_process_set).count();
+    let dropped = prev_process_set.difference(&new_processs_set).count();
 
-    let pos_process_buffer = mount_positive_samples_in_buffer(if process_delta > 0 { process_delta } else { 0 });
-    let neg_process_buffer = mount_positive_samples_in_buffer(if process_delta < 0 { -process_delta } else { 0 });
+    let pos_process_buffer = mount_positive_samples_in_buffer(spawned as isize);
+    let neg_process_buffer = mount_positive_samples_in_buffer(dropped as isize);
+
+    *prev_process_set = new_processs_set;
     (pos_process_buffer, neg_process_buffer)
 }
 
@@ -97,7 +101,7 @@ async fn audio(sink: AudioThreadChannel) {
     sys.refresh_all();
     let mut cpu_usage_smooth = 0.0; // range [0, 1]
     let mut mem_usage_smooth = 0.0; // range [0, 1]
-    let mut num_processes = sys.processes().len() as isize;
+    let mut process_set = get_process_set(&sys);
 
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
     loop {
@@ -106,7 +110,7 @@ async fn audio(sink: AudioThreadChannel) {
         let mem_buffer: AudioFrame = mem_buf(&mut sys, &mut mem_usage_smooth);
 
         let (inc_packet_buffer, out_packet_buffer) = packet_buf(&mut sys);
-        let (pos_process_buffer, neg_process_buffer) = process_buf(&mut sys, &mut num_processes);
+        let (pos_process_buffer, neg_process_buffer) = process_buf(&mut sys, &mut process_set);
 
 
         let mut inputs = SmallVec::<[&[f32]; 64]>::with_capacity(num_inputs as usize);

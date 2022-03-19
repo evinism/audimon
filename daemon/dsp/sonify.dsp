@@ -61,8 +61,8 @@ process_sounder(
   pos_process_stream,
   neg_process_stream
 ) = 
-    sy.combString(hi_freq(cpu_load) * 2, 0.5, pos_process_stream) * 0.2, 
-    sy.combString(hi_freq(cpu_load), 0.5, neg_process_stream) * 0.2 : ef.stereo_width(0.5, _, _) : _, _;
+    sy.combString(hi_freq(cpu_load) * 2, 0.1, pos_process_stream) * 0.2, 
+    sy.combString(hi_freq(cpu_load), 0.1, neg_process_stream) * 0.2 : ef.stereo_width(0.5, _, _) : _, _;
 
 swap_alerter(
   cpu_load, 
