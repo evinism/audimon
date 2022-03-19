@@ -112,7 +112,7 @@ fn sampler<T: cpal::Sample>(output: &mut [T], channels: usize, last_sample: &mut
         }
         //*last_sample = res;
         for sample in stereo_sample.iter_mut() {
-            let res = if (sample_count % 2) == 0 { right } else { left };
+            let res = if (sample_count % 2) == 0 { left } else { right };
             *sample = cpal::Sample::from::<f32>(&res);
             sample_count += 1;
         }

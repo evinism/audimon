@@ -112,14 +112,17 @@ async fn audio(sink: AudioThreadChannel) {
         let mut one: AudioFrame = [0.0; FRAME_SIZE];
         let mut two: AudioFrame = [0.0; FRAME_SIZE];
         let mut outputs = SmallVec::<[&mut [f32]; 64]>::with_capacity(num_outputs as usize);
+
         outputs.push(&mut one);
         outputs.push(&mut two);
+
         let len = FRAME_SIZE;
         dsp.update_and_compute(len as i32, &inputs[..], &mut outputs[..]);
         let left_out_vec = outputs[0].to_vec();
         let right_out_vec = outputs[1].to_vec();
+
         let left_out_samples = left_out_vec.iter().map(|sample| {
-                dasp::sample::Sample::to_sample(*sample)
+            dasp::sample::Sample::to_sample(*sample)
         });
         let right_out_samples = right_out_vec.iter().map(|sample| {
             dasp::sample::Sample::to_sample(*sample)
@@ -129,6 +132,7 @@ async fn audio(sink: AudioThreadChannel) {
             left_out_samples,
             right_out_samples
         ).collect::<Vec<(i16, i16)>>();
+
         sink.send(out_samples).await.expect("Oh no! Sending didn't work!");
         ticker.tick().await;
     }
