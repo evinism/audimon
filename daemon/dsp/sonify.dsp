@@ -17,8 +17,10 @@ volume = stereo(volumeM);
   1: CPU usage (0 to 1)
 */
 
+positive_only(sig) = select2(sig >= 0, 0, sig);
 
-derivative = _ : an.abs_envelope_rect(0.2) <: _ , @(100) : _ - _ : abs : _;
+derivative = _ <: _, @(960)  : _ - _ : positive_only: an.abs_envelope_rect(0.2) : _;
+
 
 // Status tone!
 base_freq = 110;
@@ -31,9 +33,9 @@ status_tone(
   pos_process_stream,
   neg_process_stream
 ) = (
-        os.osc(lo_freq(cpu_load)) / 16 + 
-        os.osc(hi_freq(cpu_load)) * cpu_load
-    ) * (derivative(cpu_load) * 400  + 0.1);
+        os.osc(lo_freq(cpu_load)) / 4 + 
+        os.osc(hi_freq(cpu_load))
+    ) * (derivative(cpu_load) * 10  + cpu_load * 0.1);
 
 packet_sounder(
   cpu_load,
