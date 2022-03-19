@@ -19,7 +19,9 @@ volume = stereo(volumeM);
 
 positive_only(sig) = select2(sig >= 0, 0, sig);
 
-derivative = _ <: _, @(960)  : _ - _ : positive_only: an.abs_envelope_rect(0.2) : _;
+// This is causing stackoverflows (???)
+// (WHYYY)
+derivative = _ <: _, @(960)  : _ - _ : positive_only : an.abs_envelope_rect(0.2) : _;
 
 
 // Status tone!
@@ -36,7 +38,7 @@ status_tone(
 ) = (
         os.osc(lo_freq(cpu_load)) / 4 + 
         os.osc(hi_freq(cpu_load))
-    ) * (derivative(cpu_load) * 10  + cpu_load * 0.1) <: _, _;
+    ) * (/*derivative(cpu_load) * 10  + */  cpu_load * 0.1) <: _, _;
 
 
 neg_respecting_square = _ <: _ * _ * _;
@@ -64,6 +66,16 @@ process_sounder(
 ) = 
     sy.combString(hi_freq(cpu_load) * 2, 0.5, pos_process_stream) * 0.2, 
     sy.combString(hi_freq(cpu_load), 0.5, neg_process_stream) * 0.2 : ef.stereo_width(0.5, _, _) : _, _;
+
+swap_alerter(
+  cpu_load, 
+  mem_load,
+  incoming_packet_stream,
+  outgoing_packet_stream,
+  pos_process_stream,
+  neg_process_stream
+) = 
+  os.lf_squarewavepos(2) : _ * 0.5 : _ + 1 : hi_freq(cpu_load) * _ : os.square : _ * 0.1  <: _, _;
 
 process = _, _, _, _, _, _ <: status_tone, process_sounder, packet_sounder :> _ * 0.25, _ * 0.25 : volume : _,_;
 
