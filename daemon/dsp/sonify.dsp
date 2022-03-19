@@ -18,10 +18,7 @@ volume = stereo(volumeM);
 */
 
 positive_only(sig) = select2(sig >= 0, 0, sig);
-
-// This is causing stackoverflows (???)
-// (WHYYY)
-derivative = _ <: _, @(960)  : _ - _ : positive_only : an.abs_envelope_rect(0.2) : _;
+derivative = _ <: _, @(1)  : _ - _ : positive_only : an.abs_envelope_rect(0.2) : _;
 
 
 // Status tone!
@@ -36,9 +33,9 @@ status_tone(
   pos_process_stream,
   neg_process_stream
 ) = (
-        os.osc(lo_freq(cpu_load)) / 4 + 
+        os.osc(lo_freq(cpu_load)) / 2 + 
         os.osc(hi_freq(cpu_load))
-    ) * (/*derivative(cpu_load) * 10  + */  cpu_load * 0.1) <: _, _;
+    ) * (derivative(cpu_load) * 10 * 960  +   cpu_load * 0.1) <: _, _;
 
 
 neg_respecting_square = _ <: _ * _ * _;

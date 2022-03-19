@@ -29,13 +29,20 @@ fn mount_positive_samples_in_buffer(num: isize) -> AudioFrame {
 
 
 fn cpu_buf(sys: &mut System, cpu_usage_smooth: &mut f32) -> AudioFrame {
+    // Smoothed
     sys.refresh_cpu();
+    let old_cpu_usage_smooth = *cpu_usage_smooth;
     let total_cpu_usage: f32 = sys.processors().into_iter().map(|x| x.cpu_usage()).sum();
     let normed_cpu_usage_raw = total_cpu_usage / (sys.processors().len() as f32);
     if normed_cpu_usage_raw.is_normal() {
         *cpu_usage_smooth = (1. - SMEAR_RATIO) * (*cpu_usage_smooth)  + SMEAR_RATIO * (normed_cpu_usage_raw / 100.0);
     };
-    [*cpu_usage_smooth; FRAME_SIZE]
+    let mut new_buf: AudioFrame = [0.; FRAME_SIZE];
+    for i in 0..FRAME_SIZE {
+        let ratio = i as f32 / FRAME_SIZE as f32;
+        new_buf[i] = (old_cpu_usage_smooth) * (1. - ratio) + *cpu_usage_smooth * ratio
+    }
+    new_buf
 }
 
 fn mem_buf(sys: &mut System, mem_usage_smooth: &mut f32) -> AudioFrame {

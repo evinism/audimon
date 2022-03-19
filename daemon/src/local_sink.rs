@@ -38,7 +38,6 @@ pub async fn local_sink(
     println!("Default output config : {:?}", config);
 
     let nchannels = config.channels() as usize;
-    let mut last_sample: f32 = 0.;
 
     let err_fn = |err| eprintln!("Error building output sound stream: {}", err);
 
@@ -46,21 +45,21 @@ pub async fn local_sink(
         cpal::SampleFormat::F32 => device.build_output_stream(
             &config.into(),
             move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                sampler(output, nchannels, &mut last_sample, &buf_ref_1);
+                sampler(output, nchannels, &buf_ref_1);
             },
             err_fn,
         )?,
         cpal::SampleFormat::I16 => device.build_output_stream(
             &config.into(),
             move |output: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                sampler(output, nchannels, &mut last_sample, &buf_ref_1);
+                sampler(output, nchannels, &buf_ref_1);
             },
             err_fn,
         )?,
         cpal::SampleFormat::U16 => device.build_output_stream(
             &config.into(),
             move |output: &mut [u16], _: &cpal::OutputCallbackInfo| {
-                sampler(output, nchannels, &mut last_sample, &buf_ref_1);
+                sampler(output, nchannels, &buf_ref_1);
             },
             err_fn,
         )?,
@@ -98,19 +97,18 @@ pub async fn local_sink(
 type SharedBufReference = Arc<Mutex<(RB<[f32;2048]>, RB<[f32;2048]>)>>;
 
 
-fn sampler<T: cpal::Sample>(output: &mut [T], channels: usize, last_sample: &mut f32, buf_ref: &SharedBufReference) {
+fn sampler<T: cpal::Sample>(output: &mut [T], channels: usize, buf_ref: &SharedBufReference) {
     let mut sample_count = 0;
     for stereo_sample in output.chunks_mut(channels) {
         let left: f32;
         let right: f32;
         if let Ok(mut guard) = buf_ref.lock() {
-            left = guard.0.pop().unwrap_or(*last_sample);
-            right = guard.1.pop().unwrap_or(*last_sample);
+            left = guard.0.pop().unwrap_or(0.);
+            right = guard.1.pop().unwrap_or(0.);
         } else {
-            left = 0.;//*last_sample;
-            right = 0.;//*last_sample;
+            left = 0.;
+            right = 0.;
         }
-        //*last_sample = res;
         for sample in stereo_sample.iter_mut() {
             let res = if (sample_count % 2) == 0 { left } else { right };
             *sample = cpal::Sample::from::<f32>(&res);
