@@ -59,8 +59,9 @@ packet_sounder(
 
 
 // panning signal expected -1 to 1 inclusive
-//pan_by(sig, panning) = sig <: _ * (panning + 1) / 2, _ * (-panning + 1) / 2;
-pan_by(sig, panning) = sig <: _ * cos(ma.PI * (panning + 1) / 4), _ * sin(ma.PI * (panning + 1) / 4);
+pan_by_6db(sig, panning) = sig <: _ * (panning + 1) / 2, _ * (-panning + 1) / 2;
+pan_by_3db(sig, panning) = sig <: _ * cos(ma.PI * (panning + 1) / 4), _ * sin(ma.PI * (panning + 1) / 4);
+pan_by = pan_by_3db;
 
 panned_process(
   freq,
