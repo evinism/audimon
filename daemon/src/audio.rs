@@ -18,37 +18,6 @@ type AudioThreadChannel = tokio::sync::mpsc::Sender<Vec<(i16, i16)>>;
 type AudioFrame = [f32; FRAME_SIZE];
 
 
-struct AudioGenState {
-    pub cpu_usage_smooth: f32, // range [0, 1]
-    pub mem_usage_smooth: f32, // range [0, 1]
-    pub prev_pan_spawned: f32,
-    pub prev_pan_dropped: f32,
-    pub process_set: HashSet<sysinfo::Pid>,
-    pub system: System,
-}
-
-impl AudioGenState {
-    pub fn new() -> AudioGenState {
-        let mut system = System::new_all();
-        system.refresh_all();
-
-        AudioGenState {
-            cpu_usage_smooth: 0.0, // range [0, 1]
-            mem_usage_smooth: 0.0, // range [0, 1]
-            prev_pan_spawned: 0.0,
-            prev_pan_dropped: 0.0,
-            process_set: get_process_set(&system),
-            system: system
-        }
-    }
-}
-
-fn get_avg_cpu_usage(system: &System) -> f32 {
-    let total = system.processors().into_iter().map(|x| x.cpu_usage()).sum::<f32>();
-    let raw = total / system.processors().len() as f32;
-    raw / 100.0
-}
-
 fn mount_positive_samples_in_buffer(num: usize) -> AudioFrame {
     let mut samples_buffer: AudioFrame = [0f32; FRAME_SIZE];
     let mut rng = rand::thread_rng();
@@ -60,54 +29,6 @@ fn mount_positive_samples_in_buffer(num: usize) -> AudioFrame {
     samples_buffer
 }
 
-fn cpu_buf(ags: &mut AudioGenState) -> AudioFrame {
-    let system = &mut ags.system;
-    system.refresh_cpu();
-    let old_cpu_usage_smooth = ags.cpu_usage_smooth;
-    let avg_cpu_usage = get_avg_cpu_usage(system);
-    if avg_cpu_usage.is_normal() {
-        ags.cpu_usage_smooth =
-            ags.cpu_usage_smooth + (avg_cpu_usage - ags.cpu_usage_smooth) * SMEAR_RATIO;
-
-    };
-    let mut new_buf: AudioFrame = [0.0; FRAME_SIZE];
-    for i in 0..FRAME_SIZE {
-        let ratio = i as f32 / FRAME_SIZE as f32;
-        new_buf[i] = (old_cpu_usage_smooth) * (1. - ratio) + ags.cpu_usage_smooth * ratio
-    }
-    new_buf
-}
-
-fn mem_buf(ags: &mut AudioGenState) -> AudioFrame {
-    let system = &mut ags.system;
-    system.refresh_memory();
-    let normed_mem_usage_raw = system.used_memory() as f32 / system.total_memory() as f32;
-    if normed_mem_usage_raw.is_normal() {
-        ags.mem_usage_smooth = (1. - SMEAR_RATIO) * (ags.mem_usage_smooth)  + SMEAR_RATIO * normed_mem_usage_raw;
-    }
-    [ags.mem_usage_smooth; FRAME_SIZE]
-}
-
-fn packet_buf(ags: &mut AudioGenState) -> (AudioFrame, AudioFrame) {
-    let system = &mut ags.system;
-    system.refresh_networks();
-    let mut num_inc_packets = 0;
-    let mut num_out_packets = 0;
-    for (_, data) in system.networks() {
-        num_inc_packets += data.packets_received() as usize;
-        num_out_packets += data.packets_transmitted() as usize;
-    };
-    (
-        mount_positive_samples_in_buffer(num_inc_packets),
-        mount_positive_samples_in_buffer(num_out_packets)
-    )
-}
-
-fn get_process_set(sys: &System) -> HashSet<sysinfo::Pid> {
-    sys.processes().keys().cloned().collect()
-}
-
-// Going to return: 
 fn mount_processes_in_buffer(set: &HashSet<&sysinfo::Pid>, prev_pan: &mut f32) -> (AudioFrame, AudioFrame) {
     let mut samples_buffer: AudioFrame = [0f32; FRAME_SIZE];
     // 1   0   0   0   1 
@@ -136,23 +57,102 @@ fn mount_processes_in_buffer(set: &HashSet<&sysinfo::Pid>, prev_pan: &mut f32) -
     (samples_buffer, panning_buffer)
 }
 
-// spawned, spawned_pan, dropped, dropped_pan
-fn process_buf(ags: &mut AudioGenState) -> (AudioFrame, AudioFrame, AudioFrame, AudioFrame) {
-    let system = &mut ags.system;
-    system.refresh_processes();
-    let new_process_set = get_process_set(&system);
+fn get_process_set(sys: &System) -> HashSet<sysinfo::Pid> {
+    // This doesn't refresh the system.processes buffer
+    sys.processes().keys().cloned().collect()
+}
 
-    let spawned = new_process_set.difference(&ags.process_set).collect::<HashSet<&sysinfo::Pid>>();
-    let dropped = ags.process_set.difference(&new_process_set).collect::<HashSet<&sysinfo::Pid>>();
 
-    let (pos_process_buffer, pos_pan_buffer) = mount_processes_in_buffer(&spawned, &mut ags.prev_pan_spawned);
-    let (neg_process_buffer, neg_pan_buffer) = mount_processes_in_buffer(&dropped, &mut ags.prev_pan_dropped);
+struct AudioGenState {
+    pub cpu_usage_smooth: f32, // range [0, 1]
+    pub mem_usage_smooth: f32, // range [0, 1]
+    pub prev_pan_spawned: f32,
+    pub prev_pan_dropped: f32,
+    pub process_set: HashSet<sysinfo::Pid>,
+    pub system: System,
+}
 
-    // 1000000000000100000000100000001000000100001000000000100.
-    // -.8,-.8,-.8,-.3,-.3,-.3,
+impl AudioGenState {
+    pub fn new() -> AudioGenState {
+        let mut system = System::new_all();
+        system.refresh_all();
 
-    ags.process_set = new_process_set;
-    (pos_process_buffer, pos_pan_buffer, neg_process_buffer, neg_pan_buffer)
+        AudioGenState {
+            cpu_usage_smooth: 0.0, // range [0, 1]
+            mem_usage_smooth: 0.0, // range [0, 1]
+            prev_pan_spawned: 0.0,
+            prev_pan_dropped: 0.0,
+            process_set: get_process_set(&system),
+            system: system
+        }
+    }
+
+    fn get_avg_cpu_usage(&mut self) -> f32 {
+        let total = self.system.processors().into_iter().map(|x| x.cpu_usage()).sum::<f32>();
+        let raw = total / self.system.processors().len() as f32;
+        raw / 100.0
+    }
+
+    fn cpu_buf(&mut self) -> AudioFrame {
+        let system = &mut self.system;
+        system.refresh_cpu();
+        let old_cpu_usage_smooth = self.cpu_usage_smooth;
+        let avg_cpu_usage = self.get_avg_cpu_usage();
+        if avg_cpu_usage.is_normal() {
+            self.cpu_usage_smooth =
+                self.cpu_usage_smooth + (avg_cpu_usage - self.cpu_usage_smooth) * SMEAR_RATIO;
+    
+        };
+        let mut new_buf: AudioFrame = [0.0; FRAME_SIZE];
+        for i in 0..FRAME_SIZE {
+            let ratio = i as f32 / FRAME_SIZE as f32;
+            new_buf[i] = (old_cpu_usage_smooth) * (1. - ratio) + self.cpu_usage_smooth * ratio
+        }
+        new_buf
+    }
+
+    fn mem_buf(&mut self) -> AudioFrame {
+        let system = &mut self.system;
+        system.refresh_memory();
+        let normed_mem_usage_raw = system.used_memory() as f32 / system.total_memory() as f32;
+        if normed_mem_usage_raw.is_normal() {
+            self.mem_usage_smooth = (1. - SMEAR_RATIO) * (self.mem_usage_smooth)  + SMEAR_RATIO * normed_mem_usage_raw;
+        }
+        [self.mem_usage_smooth; FRAME_SIZE]
+    }
+
+    fn packet_buf(&mut self) -> (AudioFrame, AudioFrame) {
+        let system = &mut self.system;
+        system.refresh_networks();
+        let mut num_inc_packets = 0;
+        let mut num_out_packets = 0;
+        for (_, data) in system.networks() {
+            num_inc_packets += data.packets_received() as usize;
+            num_out_packets += data.packets_transmitted() as usize;
+        };
+        (
+            mount_positive_samples_in_buffer(num_inc_packets),
+            mount_positive_samples_in_buffer(num_out_packets)
+        )
+    }
+
+    // spawned, spawned_pan, dropped, dropped_pan
+    fn process_buf(&mut self) -> (AudioFrame, AudioFrame, AudioFrame, AudioFrame) {
+        self.system.refresh_processes();
+        let new_process_set = get_process_set(&self.system);
+
+        let spawned = new_process_set.difference(&self.process_set).collect::<HashSet<&sysinfo::Pid>>();
+        let dropped = self.process_set.difference(&new_process_set).collect::<HashSet<&sysinfo::Pid>>();
+
+        let (pos_process_buffer, pos_pan_buffer) = mount_processes_in_buffer(&spawned, &mut self.prev_pan_spawned);
+        let (neg_process_buffer, neg_pan_buffer) = mount_processes_in_buffer(&dropped, &mut self.prev_pan_dropped);
+
+        // 1000000000000100000000100000001000000100001000000000100.
+        // -.8,-.8,-.8,-.3,-.3,-.3,
+
+        self.process_set = new_process_set;
+        (pos_process_buffer, pos_pan_buffer, neg_process_buffer, neg_pan_buffer)
+    }
 }
 
 async fn audio(sink: AudioThreadChannel) {
@@ -168,16 +168,16 @@ async fn audio(sink: AudioThreadChannel) {
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
     loop {
         // Create and populate buffers
-        let cpu_buffer: AudioFrame = cpu_buf(&mut audio_gen_state);
-        let mem_buffer: AudioFrame = mem_buf(&mut audio_gen_state);
+        let cpu_buffer: AudioFrame = audio_gen_state.cpu_buf();
+        let mem_buffer: AudioFrame = audio_gen_state.mem_buf();
 
-        let (inc_packet_buffer, out_packet_buffer) = packet_buf(&mut audio_gen_state);
+        let (inc_packet_buffer, out_packet_buffer) = audio_gen_state.packet_buf();
         let (
             pos_process_buffer,
             pos_pan_buffer,
             neg_process_buffer,
             neg_pan_buffer,
-        ) = process_buf(&mut audio_gen_state);
+        ) = audio_gen_state.process_buf();
 
         let inputs = SmallVec::from([
             &cpu_buffer[..],
