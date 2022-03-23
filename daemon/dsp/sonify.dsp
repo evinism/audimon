@@ -59,7 +59,8 @@ packet_sounder(
 
 
 // panning signal expected -1 to 1 inclusive
-pan_by(sig, panning) = sig <: _ * (panning + 1) / 2, _ * (-panning + 1) / 2;
+//pan_by(sig, panning) = sig <: _ * (panning + 1) / 2, _ * (-panning + 1) / 2;
+pan_by(sig, panning) = sig <: _ * cos(ma.PI * (panning + 1) / 4), _ * sin(ma.PI * (panning + 1) / 4);
 
 panned_process(
   freq,
@@ -94,5 +95,5 @@ memory_pressure_aleter(
 ) = 
   os.lf_squarewavepos((2 / (1.2 - power(mem_load, 10)))) : _ * 0.5 + 1 : hi_freq(cpu_load) * _ : os.square : _ * power(mem_load, 25) * 0.05 <: _, _;
 
-process = _, _, _, _, _, _, _, _ <: status_tone, process_sounder, packet_sounder :> _ * 0.25, _ * 0.25 : volume : _,_;
+process = _, _, _, _, _, _, _, _ <: process_sounder :> _ * 0.25, _ * 0.25 : volume : _,_;
 
